@@ -1,0 +1,2277 @@
+9000  DEF FNTest_file$
+9001! RE-STORE"/MANAGER/TEST/Max_le:REMOTE;LABEL WHOPPER"
+9002     RETURN "Max_le"
+9003  FNEND
+9004  !
+9005  !**************************************************
+9006  !*                                                *
+9007  !*  Copyright (C) Hewlett-Packard Co. 1982,1987   *
+9008  !*                                                *
+9009  !**************************************************
+9010  !
+9011  SUB Max_le(Model$,Ser_no$,Opt$,Jan_mode$,Test_mode$,INTEGER Pass_fail,Depend)
+9012 Max_le: !
+9013     OFF TIMEOUT 
+9014     IF FNDut_has("GOOD HARMON",Opt$) THEN 
+9015        Twball(Model$,Ser_no$,Opt$,Jan_mode$,Test_mode$,Pass_fail,Depend)
+9016     ELSE
+9017        Max_le_test(Model$,Ser_no$,Opt$,Jan_mode$,Test_mode$,Pass_fail,Depend,0)
+9018     END IF
+9019  SUBEND
+9020  !
+9021  !
+9022  SUB Auto_t(Model$,Ser_no$,Opt$,Jan_mode$,Test_mode$,INTEGER Pass_fail,Depend)
+9023 Auto_t: !
+9024     IF FNDut_has("GOOD HARMON",Opt$) THEN 
+9025        Twball(Model$,Ser_no$,Opt$,Jan_mode$,Test_mode$,Pass_fail,Depend)
+9026     ELSE
+9027        Max_le_test(Model$,Ser_no$,Opt$,Jan_mode$,Test_mode$,Pass_fail,Depend,1)
+9028     END IF
+9029  SUBEND
+9030  !
+9031  !
+9032  SUB Max_le_out(Model$,Serial$,Test_mode$,Data_dest$,Error$)
+9033 Max_le_out: !
+9034     IF FNDut_has("GOOD HARMON",FNGrab_option$(Model$,Serial$)) THEN 
+9035        Twball_out(Model$,Serial$,Test_mode$,Data_dest$,Error$)
+9036     ELSE
+9037        Max_le_test_out(Model$,Serial$,Test_mode$,Data_dest$,Error$,0)
+9038     END IF
+9039  SUBEND
+9040  !
+9041  !
+9042  SUB Auto_t_out(Model$,Serial$,Test_mode$,Data_dest$,Error$)
+9043 Auto_t_out: !
+9044     IF FNDut_has("GOOD HARMON",FNGrab_option$(Model$,Serial$)) THEN 
+9045        Twball_out(Model$,Serial$,Test_mode$,Data_dest$,Error$)
+9046     ELSE
+9047        Max_le_test_out(Model$,Serial$,Test_mode$,Data_dest$,Error$,1)
+9048     END IF
+9049  SUBEND
+9050  !
+9051  !
+9052  SUB Max_le_test(Model$,Ser_no$,Opt$,Jan_mode$,Test_mode$,INTEGER Pass_fail,Depend,Auto_track)
+9053 Max_le_test: !
+9054  ! **************************************************************
+9055  !
+9056  !             M A X I M U M   L E V E L E D   P O W E R
+9057  !
+9058  !                    12/15/82
+9059  !
+9060  !
+9061  !
+9062  ! **************************************************************
+9063  ! Revision Log :
+9064  !  o  Added OFF INTR 7    ms  04.30.84
+9065  !  o  Added summary report MS 5/15/84
+9066  !  o  8341 capabilities added MS 5/24/84
+9067  !  o  Hooked up Cal_names instead of using numbers Rev B  7/19/84
+9068  !  o  Added wait in between RF0 and RF1  11/1/84  MS
+9069  !  o  Fixed Set_power bug. 07/30/85  MD
+9070  !  o  Changed Prep_data_file record size to 4  2/14/86  DG
+9071  !  o  Modified case statements to accept FS versions and added setup
+9072  !     instructions for field service.  3/19/86  DG
+9073  !  o  Sped up the Cw_max_le portion of the test. 04/08/86  MD
+9074  !  o  Added separate cal_co list to print out in chamber. kh 6-17-86
+9075  !  o  Added H19 split spec to Max_le_parms. MD 6/27/86
+9076  !  o  Added wait to Cw_max_le Unlevel check. MD 8/06/86
+9077  !  o  Added Twball for 2-balls. MD 8/11/86
+9078  !  o  Added FS to Test_mode$ test in Twball sub.  Also removed H19
+9079  !     from Max_le_parms.  DG  08/13/86
+9080  !  o  Added 1 dB margin to Twball test. MD 8/15/86
+9081  !  o  Added setup instructions in Twball for field service.  DG  08/15/86
+9082  !  o  Added H03 specs.  MD  08/25/86
+9083  !  o  Fixed problem setting up H03 specs.  MD  08/27/86
+9084  !  o  Increased data file size to 6 in call to Prep_data_file. Added call
+9085  !     to Instr_present for Field.  DG  10/22/86
+9086  !  o  For field service, set spec's to customer specs.  DG  11/18/86
+9087  ! **************************************************************
+9088     Rev$="C     11.18.86" !     DG
+9089  !
+9090  ! **************************************************************
+9091  !
+9092  ! *****************************************
+9093  !      I N I T I A L I Z A T I O N
+9094  ! *****************************************
+9095     OPTION BASE 0
+9096     COM /Hpib_codes/ @Dut,@Sa,@Sb,@Co,@Pw,@Dvm,@Fun_gen,@Rfgen,@Het,@Mod_an,@Atn
+9097     COM /Hpib_codes/ @Timer,@D13,@D14,@D15,@D16
+9098     COM /Power_data/ Power_cal(*),INTEGER Num_of_freqs,Num_of_pwrs,S_n,Data_mode,Rev_code$
+9099     COM /Peripherals/ INTEGER Print,Kbd,Crt
+9100     DIM Start(20),Stop(20),Spec(20),Label$(20)[30],Data_rev$[50]
+9101     INTEGER Band,I,Full_flag,Done_flag,Unlvl,H_hres,Dbl_chk,Span,Max_mode
+9102     INTEGER Fail_flag,Ok,Last_cond,Last_band,Error_code,Do_an_auto_t,Cw_fail
+9103     INTEGER Ptr,Cal_value,Cal_loc,Look_power,Fail_counter
+9104     DIM Cal_constant$(1:24,1:2)[18],Cal_name$[18]
+9105     Depend=0!...not used in this program
+9106     Fail_counter=0
+9107     CALL Is_ref_locked("DUT",Junk)
+9108     Clr_scr
+9109     OFF KEY 
+9110     OFF INTR 7
+9111  !
+9112  !===========================================
+9113  !---- LOAD DATA FOR TEST FROM SUBPROGRAM ---
+9114  !===========================================
+9115     CALL Max_le_parms(Rev$[1,1],Start(*),Stop(*),Spec(*),Label$(*),Test_mode$,Opt$,Last_cond,Last_band)
+9116     ALLOCATE Max_dat(Last_band,Last_cond),Acc_correction(Last_band)
+9117     All_spans=Last_band+1
+9118     All_conds=Last_cond+1
+9119  !
+9120  !
+9121  !===========================================
+9122  !------ GET Pwracc DATA INTO COMMON -------
+9123  !===========================================
+9124     Get_pwr_data(Model$,Ser_no$,Test_mode$,Data_rev$,D_opt$,Error_code)
+9125     IF Error_code=1 THEN 
+9126        Clr_scr
+9127        PRINT "THERE IS NO DATA FOR OUTPUT POWER ACCURACY"
+9128        PRINT 
+9129        PRINT "This is required to run Maximum Leveled"
+9130        PRINT "power.  Return to the Test Menu and run"
+9131        PRINT "Output Power Accuracy."
+9132        BEEP 
+9133        SELECT Test_mode$
+9134        CASE "FSV","FSP","FSC"
+9135           PRINT 
+9136           PRINT "Press CarryOn to return to the Test Menu."
+9137           Wait_for_cont
+9138        CASE ELSE
+9139           SELECT Jan_mode$
+9140           CASE "MENU"
+9141              DISP "press continue to return to JANITOR"
+9142              PAUSE
+9143           CASE ELSE
+9144              DUMP ALPHA
+9145           END SELECT
+9146        END SELECT
+9147        SUBEXIT
+9148     END IF
+9149  !
+9150  !===========================================
+9151  !----CALCULATE POWER ACCURACY CORRECTIONS---
+9152  !===========================================
+9153 Flat_correction: !
+9154     PRINTER IS 1
+9155     DISP "CALCULATING ACCURACY CORRECTIONS FOR EACH BAND..."
+9156 Accuracy_check:!
+9157     FOR J=1 TO Num_of_freqs
+9158        Freq=Power_cal(0,J)
+9159        Pwr_data(20,Freq,Prog_pwr,Meas_error,Error_code)
+9160        FOR I=0 TO Last_band
+9161           IF Freq>=Start(I) AND Freq<=Stop(I) AND Meas_error<Acc_correction(I) THEN 
+9162              Acc_correction(I)=Meas_error
+9163           END IF
+9164        NEXT I
+9165     NEXT J
+9166  !
+9167  !==========================================
+9168  !---------  DISPLAY TEST MENU -------------
+9169  !==========================================
+9170     IF Jan_mode$<>"MENU" THEN Full_test
+9171 Test_menu:   !
+9172     Clr_scr
+9173     OFF KEY 
+9174     PRINT "-------------------------------------------------"
+9175     PRINT "     M A X I M U M   L E V E L E D   P O W E R "
+9176     PRINT "      rev : ";Rev$;"       S/N  : ";Ser_no$
+9177     PRINT "-------------------------------------------------"
+9178     PRINT 
+9179     PRINT "SELECT SOFT KEY :"
+9180     PRINT 
+9181     PRINT "   FULL:    FULL test, MANUAL & SWEPT modes."
+9182     PRINT 
+9183     PRINT "   SELECT:  SELECT from list of conditions."
+9184     PRINT 
+9185     PRINT "   CORRECT: View accuracy CORRECTions to be used."
+9186     PRINT 
+9187     PRINT "   JANITOR: Return to the Test Menu."
+9188     PRINT 
+9189     ON KEY 0 LABEL "FULL" GOTO Full_test
+9190     ON KEY 2 LABEL "SELECT" GOTO Select_test
+9191     ON KEY 4 LABEL "CORRECT" GOTO View_correct
+9192     ON KEY 9 LABEL "JANITOR" GOTO Exit
+9193     BEEP 2000,.1
+9194    !
+9195     DISP "WAITING FOR KEY . . . . . . ."
+9196 Whoa:GOTO Whoa
+9197    !
+9198    !________________________________________
+9199    !
+9200 View_correct:   !
+9201     Clr_scr
+9202     PRINT "WORST CASE POWER ACCURACY FOR EACH BAND..."
+9203     PRINT 
+9204     PRINT "  start     stop     dB"
+9205     PRINT "------------------------"
+9206 Fmt9:IMAGE 2X,2D.2D," to ",2D.2D,X,SDD.2D
+9207     FOR I=0 TO Last_band
+9208        PRINT USING Fmt9;Start(I),Stop(I),Acc_correction(I)
+9209     NEXT I
+9210     DISP "check 'em out; then press 'CONTINUE'"
+9211     PAUSE
+9212     GOTO Test_menu
+9213  !
+9214  !
+9215  !
+9216 Full_test:   !
+9217     OFF KEY 
+9218     SELECT Test_mode$
+9219     CASE "FSA","FSC","FSP","FSV"
+9220        Clr_scr
+9221        Instr_present(@Dut,"Device Under Test")
+9222        PRINT "**************************************************"
+9223        PRINT 
+9224        PRINT "Connect a 20 dB attenuator to the DUT's RF output!"
+9225        PRINT 
+9226        PRINT "**************************************************"
+9227        Wait_for_cont
+9228     END SELECT
+9229     IF Auto_track THEN OUTPUT @Dut;"SHRP"!...AUTO-TRACK
+9230     ON KEY 9 LABEL "ABORT" GOTO Output_menu
+9231     Fail_flag=0
+9232     Cw_fail=0
+9233     Clr_scr
+9234     Full_flag=1
+9235     GOSUB Cw_max_le
+9236     GOSUB Swp_max_le
+9237     GOSUB Save_cals
+9238     GOSUB Store_data
+9239     IF Fail_flag THEN 
+9240        Fail_count(Pass_fail)
+9241        Result$="FAILED"
+9242     ELSE
+9243        Pass_count(Pass_fail)
+9244        Result$="PASSED"
+9245     END IF
+9246     !
+9247     !.....automatic printout of data decided here
+9248     IF Jan_mode$<>"MENU" AND Test_mode$="EI_" THEN 
+9249        Max_le_test_out(Model$,Ser_no$,Test_mode$,"PRINT",Error$,Auto_track)
+9250        SUBEXIT
+9251     END IF
+9252     IF Jan_mode$<>"MENU" THEN SUBEXIT
+9253     GOTO Output_menu
+9254    !
+9255    !________________________________________
+9256    !
+9257 Select_test:   !
+9258     SELECT Test_mode$
+9259     CASE "FSA","FSC","FSP","FSV"
+9260        Clr_scr
+9261        Instr_present(@Dut,"Device Under Test")
+9262        PRINT "***************************************************"
+9263        PRINT 
+9264        PRINT "Connect a 20 dB attenuator to the DUT's RF output!"
+9265        PRINT 
+9266        PRINT "***************************************************"
+9267        Wait_for_cont
+9268     END SELECT
+9269     Full_flag=0
+9270     Fail_flag=0
+9271     Clr_scr
+9272     GOSUB Pick_em
+9273     OFF KEY 
+9274     ON KEY 9 LABEL "ABORT" GOTO Output_menu
+9275     Clr_scr
+9276     GOSUB Cw_max_le
+9277     GOSUB Swp_max_le
+9278     GOSUB Save_cals
+9279     IF Fail_flag THEN 
+9280        Result$="FAILED"
+9281     ELSE
+9282        Result$="PASSED"
+9283     END IF
+9284     GOTO Output_menu
+9285    !
+9286    !________________________________________
+9287    !
+9288 Pick_em:   !
+9289     Clr_scr
+9290     PRINT "  M A X I M U M   L E V E L E D   P O W E R "
+9291     PRINT "  _________________________________________"
+9292     PRINT "         rev : ";Rev$
+9293     PRINT 
+9294     PRINT "SELECT DESIRED CONDITION :"
+9295     PRINT 
+9296     FOR I=0 TO All_conds
+9297        PRINT I;Label$(I)
+9298     NEXT I
+9299     INPUT "WHICH ONE :",Max_mode
+9300     Max_mode=INT(Max_mode)
+9301     IF Max_mode>All_conds OR Max_mode<0 THEN Pick_em
+9302     !
+9303 Enter_span:    !
+9304     Clr_scr
+9305     PRINT "mode : ";Label$(Max_mode)
+9306     PRINT 
+9307     PRINT "SELECT DESIRED START/STOP FREQ :"
+9308     PRINT 
+9309 Fmt1:IMAGE 3X,2D.3D," GHz to ",2D.3D," GHz"
+9310     FOR I=0 TO Last_band
+9311        PRINT I;
+9312        PRINT USING Fmt1;Start(I),Stop(I)
+9313     NEXT I
+9314     PRINT " "&VAL$(All_spans)&"  ALL OF THE ABOVE....."
+9315     INPUT "ENTER #",Span
+9316     Span=INT(Span)
+9317     IF Span>All_spans OR Span<0 THEN Enter_span
+9318   !
+9319     RETURN 
+9320   !
+9321   !
+9322  !==========================================
+9323 Output_menu:  !------------------------------
+9324  !==========================================
+9325     Clr_scr
+9326     OFF KEY 
+9327     PRINT "-------------------------------------------------"
+9328     PRINT "  M A X I M U M   L E V E L E D   P O W E R "
+9329     PRINT "-------------------------------------------------"
+9330     PRINT "               rev : ";Rev$
+9331     PRINT 
+9332     PRINT 
+9333     IF Cw_fail THEN 
+9334        PRINT "     Instrument # ";Ser_no$;" : ";Result$&" @";Fail_freq;" GHz"
+9335     ELSE
+9336        PRINT "     Instrument # ";Ser_no$;" : ";Result$
+9337     END IF
+9338     PRINT 
+9339     PRINT "Select soft-key :"
+9340     PRINT 
+9341     PRINT "  RETEST:   Return to the beginning of the test."
+9342     PRINT 
+9343     PRINT "  DISPLAY:  Display the test results on the CRT."
+9344     PRINT 
+9345     PRINT "  PRINT:    Print a hardcopy of the test results."
+9346     PRINT 
+9347     PRINT "  JANITOR:  Return to the test menu."
+9348     ON KEY 0 LABEL "RETEST" GOTO Test_menu
+9349     ON KEY 9 LABEL "JANITOR" GOTO Exit
+9350     ON KEY 2 LABEL "DISPLAY" GOTO Soft_copy
+9351     ON KEY 4 LABEL "PRINT" GOTO Hard_copy
+9352   !
+9353     BEEP 700,.2
+9354 Here:GOTO Here
+9355   !
+9356 Soft_copy:  !
+9357     Data_dest$="DISPLAY"
+9358     GOSUB Print_all
+9359     GOTO Output_menu
+9360   !
+9361 Hard_copy:  !
+9362     Data_dest$="PRINT"
+9363     GOSUB Print_all
+9364     GOTO Output_menu
+9365  !
+9366  !-----------------------------------------
+9367 Exit:SUBEXIT
+9368  !-----------------------------------------
+9369  !
+9370  !
+9371  !==========================================
+9372  !==========================================
+9373  !-------CHECK MAX POWER IN CW MODE---------
+9374  !==========================================
+9375  !==========================================
+9376  !
+9377  !
+9378 Cw_max_le:  !
+9379     IF Max_mode<>Last_cond AND Max_mode<>Last_cond+1 AND NOT Full_flag THEN RETURN 
+9380     Clr_scr
+9381     PRINT "**************************************************"
+9382     PRINT "*                                                *"
+9383     PRINT "* checking maximum leveled power in MANUAL SWEEP *"
+9384     PRINT "*                                                *"
+9385     PRINT "**************************************************"
+9386     FOR Band=0 TO Last_band-1
+9387        IF NOT Full_flag AND Span<>Band AND Span<>All_spans THEN Next_band
+9388   !
+9389        Step_size=.1
+9390   !
+9391 Initialize:  !
+9392        H_hres=0!..low resolution steps
+9393        Power=20
+9394        Good_power=0
+9395        Peak_flag=0
+9396        Squegg=1
+9397        No_of_lvls=11
+9398        Freq=Stop(Band)
+9399        Done_flag=0
+9400        Look_power=1
+9401        OUTPUT @Dut;"IP PL";Power;"DB FA";Start(Band);"GZ FB";Stop(Band);"GZ"
+9402        OUTPUT @Dut;"S3";Freq;"GZ"
+9403        GOTO Chek_it
+9404   !
+9405 Set_power:  !
+9406        IF Freq=Stop(Band) THEN 
+9407           IF Look_power THEN 
+9408              GOSUB Get_power
+9409              Look_power=0
+9410           ELSE
+9411              IF PROUND(Bad_power-Good_power,-2)>.5 THEN 
+9412                 Power=(Bad_power+Good_power)/2
+9413                 Power=(Power DIV .05)*.05
+9414              ELSE
+9415                 Power=Bad_power-.05
+9416              END IF
+9417           END IF
+9418        ELSE
+9419           IF Look_power THEN 
+9420              GOSUB Get_power
+9421              Look_power=0
+9422           ELSE
+9423              Power=Bad_power-.05
+9424           END IF
+9425        END IF
+9426       !PRINT Unlvl,Freq,Power,Good_power,Bad_power
+9427        OUTPUT @Dut;"PL";Power;"DB"
+9428        Freek=Freq
+9429        IF Power<-5 THEN GOTO Done!....give up, it's busted !!
+9430        GOTO Chek_it
+9431   !
+9432 Set_freq:  !
+9433        IF Done_flag THEN GOTO Done
+9434        IF Freq<Start(Band) THEN 
+9435           Done_flag=1
+9436           Freq=Start(Band)
+9437        END IF
+9438        OUTPUT @Dut;"S3";Freq;"GZ"
+9439       !OUTPUT 703;Unlvl,Freq,Power,Good_power,Bad_power
+9440        Look_power=1
+9441        Squegg=0
+9442        Peak_flag=0
+9443   !
+9444   !
+9445 Chek_it:GOSUB Is_it_lvld
+9446   !
+9447   !
+9448        IF Unlvl THEN 
+9449           Bad_power=Power
+9450           IF Freq=Stop(Band) THEN GOTO Set_power
+9451           No_of_lvls=0
+9452           IF H_hres THEN 
+9453              GOTO Set_power
+9454           ELSE
+9455              H_hres=1
+9456              Freq=Freq+Step_size!...back_up
+9457              IF Freq>Stop(Band) THEN Freq=Stop(Band)
+9458           END IF
+9459        ELSE
+9460           Good_power=Power
+9461           IF PROUND(Bad_power-Good_power,-2)>.05 THEN GOTO Set_power
+9462        END IF
+9463        No_of_lvls=No_of_lvls+1
+9464        IF No_of_lvls>10 THEN 
+9465           Freq=Freq-Step_size
+9466           H_hres=0
+9467        ELSE
+9468           Freq=Freq-Step_size/10
+9469        END IF
+9470        GOTO Set_freq
+9471    !
+9472 Is_it_lvld:   !
+9473        Unlvl=0
+9474        WAIT .4
+9475        IF FNExtended_status(@Dut,64) THEN 
+9476           IF NOT Peak_flag THEN 
+9477              OUTPUT @Dut;"RP1,RP0"
+9478             !OUTPUT @Dut;"SHMZ10HZSHHZ"
+9479             !OUTPUT @Dut;"OA"
+9480             !ENTER @Dut;Peak_num
+9481             !DISP "Manual=";Freq,"Sub-channel 10=";Peak_num
+9482              Peak_flag=1
+9483           END IF
+9484           OUTPUT @Dut;"RF0"
+9485           WAIT .2
+9486           OUTPUT @Dut;"RF1"
+9487           WAIT .4
+9488           Unlvl=FNExtended_status(@Dut,64)
+9489        END IF
+9490        RETURN 
+9491 Get_power:       !
+9492   !
+9493        OUTPUT @Dut;"OR"
+9494        ENTER @Dut;Power
+9495        RETURN 
+9496   !
+9497 Done:  Max_dat(Band,Last_cond)=Power+Acc_correction(Band)
+9498        IF Max_dat(Band,Last_cond)<Spec(Band) THEN 
+9499           Fail_flag=1
+9500           Cw_fail=1
+9501           Fail_freq=Freek
+9502        END IF
+9503 Next_band:NEXT Band
+9504     RETURN 
+9505  !
+9506  !
+9507  !===========================================
+9508  !===========================================
+9509  !-------CHECK MAX POWER IN SWEPT MODES------
+9510  !===========================================
+9511  !===========================================
+9512  !
+9513 Swp_max_le: !
+9514     IF Max_mode=Last_cond AND NOT Full_flag THEN RETURN 
+9515     PRINT "**************************************************"
+9516     PRINT "*                                                *"
+9517     PRINT "* checking maximum leveled power in SWEPT MODES  *"
+9518     PRINT "*                                                *"
+9519     PRINT "**************************************************"
+9520     OUTPUT @Dut;"IP PL0DB SHRC"
+9521     FOR Band=0 TO Last_band
+9522        IF NOT Full_flag AND Band<>Span AND Span<>All_spans THEN Next_one
+9523        OUTPUT @Dut;"FA";Start(Band);"GZ FB";Stop(Band);"GZ"
+9524   !
+9525        FOR Cond=0 TO Last_cond-1
+9526           IF NOT Full_flag AND Cond<>Max_mode AND Max_mode<>All_conds THEN Next_cond
+9527           OUTPUT @Dut;"AL0"
+9528 Setup_sweep:   !
+9529           SELECT Cond
+9530           CASE 0
+9531              OUTPUT @Dut;"S2 STAU"
+9532           CASE 1
+9533              OUTPUT @Dut;"S1 STAU"
+9534           CASE 2
+9535              OUTPUT @Dut;"S2 ST.5SC"
+9536           CASE 3
+9537              OUTPUT @Dut;"S2 STAU SV2 IP PL-9DB SV1 RC2 AL1 1"
+9538           END SELECT
+9539     !
+9540 Check_power:    !
+9541           Upper=20
+9542           Lower=-10
+9543           Dbl_chk=0
+9544     !
+9545 New_pwr:    !
+9546           Power=(Upper+Lower)/2
+9547           Power=INT((Power+5)*20+.5)/20-5!..round
+9548     !
+9549 Set_pwr:!
+9550           OUTPUT @Dut;"PL";Power;"DB"
+9551           IF (Upper-Lower)<.1 AND NOT Dbl_chk THEN Double_check
+9552          !WAIT .2
+9553           OUTPUT @Dut;"CS"
+9554           IF FNDut_has("GOOD HARMON") THEN 
+9555              OUTPUT @Dut;"RF0"
+9556              WAIT .2
+9557              OUTPUT @Dut;"RF1"
+9558           END IF
+9559           GOSUB Take_sweep
+9560           IF Dbl_chk THEN Double_check
+9561     !
+9562 Enter_status:    !
+9563           OUTPUT @Dut;"OS"!....FNUnleveled has a CS in it
+9564           ENTER @Dut USING "#,B";Stat,Ext
+9565           IF BIT(Ext,6) THEN 
+9566              Upper=Power
+9567           ELSE
+9568              Lower=Power
+9569           END IF
+9570           GOTO New_pwr
+9571     !
+9572     !
+9573 Take_sweep:!
+9574           SELECT Cond
+9575           CASE 0
+9576              OUTPUT @Dut;"TSTSTS"!...SS,AUTO
+9577           CASE 1
+9578              WAIT .3!...CONT,AUTO
+9579           CASE 2
+9580              OUTPUT @Dut;"TSTS"!...SS,1 sec
+9581           CASE 3
+9582              OUTPUT @Dut;"TS TS TS"!...ALT SWP
+9583              WAIT .1
+9584           END SELECT
+9585           RETURN 
+9586     !
+9587     !
+9588 Double_check:  !
+9589           SELECT Dbl_chk
+9590           CASE 0!...not set yet
+9591              Dbl_chk=1
+9592              Power=Power+.3
+9593              GOTO Set_pwr
+9594           CASE 1!...increasing power to unlvl
+9595              WAIT .2
+9596              OUTPUT @Dut;"OS"
+9597              ENTER @Dut USING "#,B";Stat,Ext
+9598              IF BIT(Ext,6) THEN 
+9599                 Dbl_chk=2
+9600                 Power=Power-.05
+9601                 GOTO Set_pwr
+9602              ELSE
+9603                 IF Power>=20 THEN 
+9604                    Power=20
+9605                    GOTO Finished
+9606                 END IF
+9607                 Power=Power+.05
+9608                 GOTO Set_pwr
+9609              END IF
+9610           CASE 2!...decreasing power to lvl
+9611              WAIT .2
+9612              OUTPUT @Dut;"OS"
+9613              ENTER @Dut USING "#,B";Stat,Ext
+9614              IF BIT(Ext,6) THEN 
+9615                 Power=Power-.05
+9616                 IF Power<-10 THEN Finished
+9617                 GOTO Set_pwr
+9618              END IF
+9619           END SELECT
+9620  !
+9621  !
+9622 Finished:!
+9623           Max_dat(Band,Cond)=Power+Acc_correction(Band)
+9624           IF Max_dat(Band,Cond)<Spec(Band) THEN Fail_flag=1
+9625  !
+9626 Next_cond:NEXT Cond
+9627 Next_one:NEXT Band
+9628     RETURN 
+9629  !
+9630  !==========================================
+9631  !------------ PRINT OUT DATA --------------
+9632  !==========================================
+9633 Print_all:  !
+9634     Hdr$=Rev$[1,1]&Opt$
+9635     CALL Max_le_test_out(Model$,Ser_no$,Test_mode$,Data_dest$,Error$,Auto_track,Hdr$,Max_dat(*),Acc_correction(*),Full_flag,Span,Max_mode,Cal_constant$(*))
+9636     RETURN 
+9637   !
+9638   !
+9639 Save_cals:  !
+9640     DATA "YTM GAIN 1"       ,"YTM BX GAIN 1"
+9641     DATA "YTM GAIN 2"       ,"YTM BX GAIN 2"
+9642     DATA "YTM GAIN 3"       ,"YTM BX GAIN 3"
+9643     DATA "YTM GAIN 4"       ,"YTM BX GAIN 4"
+9644     DATA "YTM OFFSET 1"     ,"YTM BX DLY 2"
+9645     DATA "YTM OFFSET 2"     ,"YTM BX DLY 3"
+9646     DATA "YTM OFFSET 3"     ,"YTM BX DLY 4"
+9647     DATA "YTM OFFSET 4"     ,"YTM SGL BD RT"
+9648     DATA "YTM DLY 1"        ,"YTM MLT BD RT"
+9649     DATA "YTM DLY 2"        ,"YTM BX RTA"
+9650     DATA "YTM DLY 3"        ,"YTM BX RTB"
+9651     DATA "YTM DLY 4"        ,"MAX SWEEP RATE"
+9652     DATA "end"
+9653     !
+9654 Chamber_cal_co:!
+9655     DATA "YTM OFFSET 1"
+9656     DATA "YTM OFFSET 2"
+9657     DATA "YTM OFFSET 3"
+9658     DATA "YTM OFFSET 4"
+9659     DATA "YTM GAIN 1"
+9660     DATA "YTM GAIN 2"
+9661     DATA "YTM GAIN 3"
+9662     DATA "YTM GAIN 4"
+9663     DATA "YTM BX GAIN 1"
+9664     DATA "YTM BX GAIN 2"
+9665     DATA "YTM BX GAIN 3"
+9666     DATA "YTM BX GAIN 4"
+9667     DATA "YTM DLY 1"
+9668     DATA "YTM DLY 2"
+9669     DATA "YTM DLY 3"
+9670     DATA "YTM DLY 4"
+9671     DATA "YTM BX DLY 2"
+9672     DATA "YTM BX DLY 3"
+9673     DATA "YTM BX DLY 4"
+9674     DATA "YTM MLT BD RT"
+9675     DATA "YTM SGL BD RT"
+9676     DATA "YTM BX RTA"
+9677     DATA "YTM BX RTB"
+9678     DATA "YTM TEMP COMP"
+9679     DATA "MAX SWEEP RATE"
+9680     DATA "end"
+9681     !
+9682     !.......read the list of cal constants to save
+9683     SELECT Test_mode$
+9684     CASE "T00","T25","T40","T55"
+9685        RESTORE Chamber_cal_co
+9686     CASE ELSE
+9687        RESTORE Save_cals
+9688     END SELECT
+9689     Ptr=1
+9690     REPEAT
+9691        READ Cal_name$
+9692        IF Cal_name$<>"end" THEN 
+9693           Cal_constant$(Ptr,1)=Cal_name$
+9694           Ptr=Ptr+1
+9695        END IF
+9696     UNTIL Cal_name$="end" OR Ptr>24
+9697     !
+9698     !
+9699     !......now try to load these cal constants
+9700     FOR I=1 TO Ptr-1
+9701        Cal_loc=FNCal_location(Cal_constant$(I,1))
+9702        IF Cal_loc<>0 THEN 
+9703           Cal_value=FNRead_cal(@Dut,Cal_loc)
+9704           OUTPUT Cal_constant$(I,2) USING "#,5D";Cal_value
+9705        ELSE
+9706           Cal_constant$(I,2)="-----"
+9707        END IF
+9708     NEXT I
+9709     RETURN 
+9710   !_________________________________________
+9711   !
+9712   !           STORE DATA
+9713   !_________________________________________
+9714   !
+9715 Store_data:  !
+9716     IF Auto_track THEN 
+9717        File_name$="Auto_t"
+9718     ELSE
+9719        File_name$="Max_le"
+9720     END IF
+9721     Prep_data_file(@File,Model$,Test_mode$,File_name$,Ser_no$,6)
+9722     OUTPUT @File;FNData_tag$(Rev$[1,1]),Opt$,Max_dat(*),Acc_correction(*),Cal_constant$(*)
+9723     ASSIGN @File TO *
+9724     RETURN 
+9725   !
+9726   !
+9727  SUBEND
+9728   !
+9729  !###########################################
+9730  !###########################################
+9731  !
+9732  SUB Max_le_test_out(Model$,Ser$,Test_mode$,Data_dest$,Error$,INTEGER Auto_track,OPTIONAL Hdr$,Max(*),Flat(*),INTEGER Pfull,Pspan,Pmode,Cal_con$(*))
+9733 Max_le_test_out: !
+9734!
+9735!********************************************
+9736!
+9737!  M A X I M U M   L E V E L E D  P O W E R
+9738!    O U T P U T    S U B P R O G R A M
+9739!
+9740!        part of # 08340-90080  rev A
+9741!
+9742!********************************************
+9743!
+9744     OPTION BASE 0
+9745     COM /Peripherals/ INTEGER Prntr,Kbd,Crt
+9746     DIM Start(20),Stop(20),Spec(20)
+9747     DIM Label$(5)[30],Data_rev$[50]
+9748     DIM Cal_constant$(1:24,1:2)[18]
+9749     INTEGER Last_cond,Last_band,Cal_nums_here,Tmp(12)
+9750     INTEGER File_found,Ptr,Left
+9751!
+9752 !--------------------------------------------
+9753!     FIND DATA TO PRINTOUT
+9754!--------------------------------------------
+9755     IF NPAR=6 THEN 
+9756        Full=1
+9757        IF Auto_track THEN 
+9758           File_name$="Auto_t"
+9759        ELSE
+9760           File_name$="Max_le"
+9761        END IF
+9762        Find_data(@Dat,Model$,Test_mode$,File_name$,Ser$,File_found)
+9763        IF File_found THEN 
+9764           ENTER @Dat;Data_rev$,Opt$
+9765           SELECT Data_rev$[1,1]
+9766           CASE "a","b","c","d","e","f","g"
+9767              Cal_nums_here=0
+9768           CASE "h","A"
+9769              Cal_nums_here=1
+9770           CASE "B","C"
+9771              Cal_nums_here=2
+9772           CASE ELSE
+9773              Err$=Data_rev$[1,1]
+9774              SUBEXIT!........cannot print this revision of data
+9775           END SELECT
+9776           !
+9777           !
+9778           Max_le_parms(Data_rev$[1,1],Start(*),Stop(*),Spec(*),Label$(*),Test_mode$,Opt$,Last_cond,Last_band)
+9779           ALLOCATE Max_dat(Last_band,Last_cond),Acc_correction(Last_band)
+9780           ENTER @Dat;Max_dat(*),Acc_correction(*)
+9781           SELECT Cal_nums_here
+9782           CASE 0
+9783              !
+9784           CASE 1
+9785              ALLOCATE INTEGER Cal_nums(0:15,0:1)
+9786              ENTER @Dat;Cal_nums(*)
+9787              ASSIGN @Dat TO *
+9788              Chg_cal_list(Cal_nums(*),Cal_constant$(*))
+9789              !
+9790           CASE 2
+9791              ENTER @Dat;Cal_constant$(*)
+9792              ASSIGN @Dat TO *
+9793              !
+9794           END SELECT
+9795        ELSE
+9796           Error$="?"
+9797           SUBEXIT
+9798        END IF
+9799     ELSE
+9800        Opt$=Hdr$[2]
+9801        Max_le_parms(Hdr$[1,1],Start(*),Stop(*),Spec(*),Label$(*),Test_mode$,Opt$,Last_cond,Last_band)
+9802        ALLOCATE Max_dat(Last_band,Last_cond),Acc_correction(Last_band)
+9803        FOR I=0 TO Last_band
+9804           Acc_correction(I)=Flat(I)
+9805           FOR J=0 TO Last_cond
+9806              Max_dat(I,J)=Max(I,J)
+9807           NEXT J
+9808        NEXT I
+9809  !
+9810        Data_rev$=FNData_tag$(Hdr$[1,1])
+9811        Max_mode=Pmode
+9812        Full=Pfull
+9813        Span=Pspan
+9814        All_spans=Last_band+1
+9815        All_conds=Last_cond+1
+9816        FOR J=1 TO 2
+9817           FOR I=1 TO 24
+9818              Cal_constant$(I,J)=Cal_con$(I,J)
+9819           NEXT I
+9820        NEXT J
+9821        Cal_nums_here=1
+9822     END IF
+9823  !
+9824  !------------------------------------------
+9825  !       PRINTOUT
+9826  !------------------------------------------
+9827 Print_out: !
+9828     Fail_flag=0
+9829  !
+9830  !-------------------------------------------
+9831  !     SELECT PRINTOUT DEVICE
+9832  !-------------------------------------------
+9833     SELECT Data_dest$
+9834     CASE "PRINT"
+9835        PRINTER IS Prntr
+9836     CASE "DISPLAY"
+9837        PRINTER IS Crt
+9838     END SELECT
+9839     Top_of_page
+9840  !
+9841     OFF KEY 
+9842     GOSUB Heading
+9843 Fmt2:IMAGE /,"--",2D.3D," GHz to ",2D.3D," GHz --data--spec: ",2D.2D," dBm"
+9844 Fmt3:IMAGE 27A,":",X,3D.2D," dBm ",10A
+9845     FOR I=0 TO Last_band
+9846        IF Span=I OR Full OR Span=All_spans THEN 
+9847           PRINT USING Fmt2;Start(I),Stop(I),Spec(I)
+9848        ELSE
+9849           GOTO Next_i
+9850        END IF
+9851        FOR Cond=0 TO Last_cond
+9852           IF Cond=Max_mode OR Max_mode=All_conds OR Full THEN 
+9853              IF I=Last_band AND Cond=Last_cond THEN Next_cond
+9854              Result$=""
+9855              IF Max_dat(I,Cond)<Spec(I) THEN 
+9856                 Result$=" FAILED!!"
+9857                 Fail_flag=1
+9858              END IF
+9859              PRINT USING Fmt3;Label$(Cond);Max_dat(I,Cond),Result$
+9860           END IF
+9861 Next_cond:NEXT Cond
+9862        PRINT "flatness correction used   :   ";
+9863        PRINT USING "2D.2D";Acc_correction(I)
+9864        IF NOT Cal_nums_here THEN PRINT 
+9865        IF Data_dest$="DISPLAY" THEN 
+9866           OFF KEY 
+9867           ON KEY 5 LABEL "NEXT" GOTO Next_one
+9868           ON KEY 7 LABEL "FIRST" GOTO Print_out
+9869           ON KEY 9 LABEL "EXIT" GOTO Sbexit
+9870           LOOP
+9871           END LOOP
+9872 Next_one: GOSUB Heading
+9873        END IF
+9874 Next_i:NEXT I
+9875 !
+9876     IF Fail_flag THEN 
+9877        PRINT "********************** FAILED ********************"
+9878     ELSE
+9879        PRINT " - - - - - - - - - - - PASSED - - - - - - - - - -"
+9880     END IF
+9881 !
+9882     SELECT Test_mode$
+9883     CASE "FSP","FSV","FSC"
+9884     !  Do Not Print Calibration Constants
+9885     CASE ELSE
+9886        IF Cal_nums_here THEN 
+9887           PRINT "CAL CONSTANT       VALUE  CAL CONSTANT       VALUE"
+9888           PRINT "--------------------------------------------------"
+9889 Img1:     IMAGE  #,18A,":",5A,2X
+9890 Img2:     IMAGE  #,18A,":",5A
+9891           Left=1
+9892           FOR Ptr=1 TO 24
+9893              IF Cal_constant$(Ptr,1)<>"" THEN 
+9894                 IF Left THEN 
+9895                    PRINT USING Img1;Cal_constant$(Ptr,1),Cal_constant$(Ptr,2)
+9896                    Left=0
+9897                 ELSE
+9898                    PRINT USING Img2;Cal_constant$(Ptr,1),Cal_constant$(Ptr,2)
+9899                    Left=1
+9900                    PRINT 
+9901                 END IF
+9902              END IF
+9903           NEXT Ptr
+9904           PRINT 
+9905        END IF
+9906 !
+9907        IF Data_dest$="DISPLAY" THEN CALL Wait_for_cont
+9908     END SELECT
+9909 Sbexit:    !
+9910     PRINTER IS Crt
+9911     SUBEXIT
+9912 !
+9913 !
+9914 Heading: !
+9915     Clr_scr
+9916     PRINT USING "K,5A,K,4A,K";"======== model : ",Model$," ===== s/n : ",Ser$," ========="
+9917  !
+9918  !
+9919     SELECT Test_mode$
+9920     CASE "T00" TO "T99"
+9921        PRINT "     M A X I M U M   L E V E L E D   P O W E R"
+9922        PRINT "temperature = "&Test_mode$[2,3]&" deg C";
+9923     CASE "EI_"
+9924        PRINT "<< EI >>  M A X I M U M   L E V E L E D  P O W E R"
+9925        PRINT "              ";
+9926     CASE "CF_","FSC","FSA","FSV","FSP"
+9927        PRINT "     M A X I M U M   L E V E L E D   P O W E R"
+9928        PRINT "              ";
+9929     END SELECT
+9930     IF Auto_track THEN 
+9931        PRINT "    w/ Auto-Track"
+9932     ELSE
+9933        PRINT 
+9934     END IF
+9935 Fmt5:IMAGE "   test rev : ",K
+9936     PRINT USING Fmt5;Data_rev$
+9937     PRINT "================================================="
+9938     RETURN 
+9939  !
+9940  !
+9941  SUBEND
+9942  !
+9943  !
+9944  !###########################################
+9945  !###########################################
+9946  !
+9947  SUB Max_le_parms(Rev$,Start(*),Stop(*),Spec(*),Label$(*),Test_mode$,Opt$,INTEGER L_cond,L_band)
+9948 Max_le_parms: !
+9949 !********************************************
+9950 !
+9951 !  M A X I M U M   L E V E L E D  P O W E R
+9952 !        D A T A   S U B P R O G R A M
+9953 !
+9954 !        part of # 08340-90080  rev A
+9955 !
+9956 !    4.14.84                    Mike Seibel
+9957 !********************************************
+9958 !
+9959 !_____________________________________________
+9960 !
+9961 !         STORE TEST CONDITIONS :
+9962 !_____________________________________________
+9963 !
+9964 !
+9965 ! ____store bands, last_bands, last_cond___
+9966 !
+9967     SELECT 1
+9968     CASE FNDut_has("MAX PWR",Opt$)
+9969        SELECT Rev$
+9970        CASE "C"
+9971           RESTORE Dat5
+9972           L_band=8
+9973           L_cond=4
+9974        CASE ELSE
+9975           GOTO Huh
+9976        END SELECT
+9977     CASE FNDut_has("BAND 4",Opt$)
+9978        SELECT Rev$
+9979        CASE "a","b","c"
+9980           RESTORE Dat1
+9981           L_band=6
+9982           L_cond=4
+9983        CASE "d","e","f","g","h","A","B","C"
+9984           RESTORE Dat2
+9985           L_band=6
+9986           L_cond=4
+9987        CASE ELSE
+9988           GOTO Huh
+9989        END SELECT
+9990     CASE ELSE !............... no band 4 installed
+9991        SELECT Rev$
+9992        CASE "A","B"
+9993           RESTORE Dat3
+9994           L_band=4
+9995           L_cond=4
+9996        CASE "C"
+9997           RESTORE Dat4
+9998           L_band=5
+9999           L_cond=4
+10000       CASE ELSE
+10001          GOTO Huh
+10002       END SELECT
+10003    END SELECT
+10004    !
+10005    DISP "CALCULATING SPECS ";
+10006    FOR Count=0 TO L_band
+10007       DISP ".";
+10008       READ Start(Count),Stop(Count)
+10009       GOSUB Calc_spec
+10010       Spec(Count)=Test_spec
+10011    NEXT Count
+10012    DISP 
+10013   !
+10014 Dat1:!....old data
+10015    DATA .01,2.299999999
+10016    DATA 2.3,6.999999999
+10017    DATA 7,13.499999999
+10018    DATA 13.5,19.999999999
+10019    DATA 20,22.999999999
+10020    DATA 23,26.5
+10021    DATA .01,26.5
+10022!
+10023 Dat2:!....new data
+10024    DATA .01,2.399999999
+10025    DATA 2.3,6.999999999
+10026    DATA 6.9,13.499999999
+10027    DATA 13.35,19.999999999
+10028    DATA 19.8,22.999999999
+10029    DATA 23,26.5
+10030    DATA .01,26.5
+10031!
+10032 Dat3:!......no band 4 data
+10033    DATA .01,2.399999999
+10034    DATA 2.3,6.999999999
+10035    DATA 6.9,13.499999999
+10036    DATA 13.35,20
+10037    DATA .01,20
+10038!
+10039 Dat4:!......no band 4 data but split band 3 spec
+10040    DATA .01,2.399999999
+10041    DATA 2.3,6.999999999
+10042    DATA 6.9,13.499999999
+10043    DATA 13.35,18.6
+10044    DATA 13.35,20
+10045    DATA .01,20
+10046!
+10047 Dat5:!....new data for H01 split spec
+10048    DATA .01,2.399999999
+10049    DATA 2.3,6.999999999
+10050    DATA 7.0,8.999999999
+10051    DATA 9.0,13.499999999
+10052    DATA 13.5,14.99999999
+10053    DATA 15,17.9999999999
+10054    DATA 18,19.9999999999
+10055    DATA 20,22.9999999999
+10056    DATA 23,26.50001
+10057    DATA .01,26.5
+10058!
+10059 Store_labels:!
+10060    SELECT Rev$
+10061    CASE "a","b","c","d","e","f","g","h","A","B","C"
+10062       IF FNDut_has("H19",Opt$) THEN 
+10063          RESTORE Lbls_2
+10064       ELSE
+10065          RESTORE Lbls_1
+10066       END IF
+10067    CASE ELSE
+10068       GOTO Huh
+10069    END SELECT
+10070    FOR Count=0 TO L_cond+1
+10071       READ Label$(Count)
+10072    NEXT Count
+10073   !
+10074 Lbls_1:  !
+10075    DATA "SINGLE SWEEP, AUTO ST      "
+10076    DATA "CONTINUOUS SWEEP, AUTO ST  "
+10077    DATA "SINGLE SWEEP, .5 SEC ST    "
+10078    DATA "ALT: SINGLE(AUTO),IP(-9dBm)"
+10079    DATA "MANUAL SWEEP; PEAKING ON   "
+10080    DATA "...ALL ABOVE MODES         "
+10081!
+10082 Lbls_2:  !
+10083    DATA "SINGLE SWEEP, AUTO ST      "
+10084    DATA "CONTINUOUS SWEEP, AUTO ST  "
+10085    DATA "SINGLE SWEEP, .5 SEC ST    "
+10086    DATA "MANUAL SWEEP; PEAKING ON   "
+10087    DATA "...ALL ABOVE MODES         "
+10088!
+10089    SUBEXIT
+10090!
+10091 Calc_spec:!---------------------------------
+10092    Uncert=.25!....meas uncertainty
+10093    Margin=.5!.....dB allowance for temperature drift
+10094!
+10095    Lowest_spec=9999
+10096    FOR Freq=Start(Count) TO Stop(Count) STEP .2
+10097       Pwr=FNMax_pwr(@Dut,Freq,Opt$)
+10098       IF Pwr<Lowest_spec THEN Lowest_spec=Pwr
+10099    NEXT Freq
+10100    Pwrspec=Lowest_spec
+10101!
+10102    SELECT Test_mode$
+10103    CASE "CF_","EI_" !...CAL/FINAL, EI  specs <<<<<<<<<<<<<<<<<<<<<<<<<
+10104       Test_spec=Pwrspec+Margin+2*Uncert
+10105!
+10106    CASE "FSA","FSC","FSV","FSP" !.....SERVICE specs
+10107       Test_spec=Pwrspec
+10108!
+10109    CASE "T00" TO "T54"  !....HEAT TEST specs
+10110       Test_spec=Pwrspec+2*Uncert
+10111!
+10112    CASE "T55"  !......55 deg IS LOOSENED BY 3 dB
+10113       Test_spec=Pwrspec+2*Uncert-3
+10114!
+10115    END SELECT
+10116    RETURN 
+10117!
+10118!
+10119 Huh:DISP "Revision not defined in Max_le_parms !!!"
+10120    PAUSE
+10121!
+10122 SUBEND
+10123 SUB Max_le_smy(Model$,Ser$,Test_mode$,Data_dest$,Error$)
+10124 Max_le_smy:!
+10125!
+10126!********************************************
+10127!
+10128!  M A X I M U M   L E V E L E D  P O W E R
+10129!
+10130!        TEMPERATURE CHAMBER SUMMARY
+10131!
+10132!        part of # 08340-90080
+10133!
+10134!********************************************
+10135!
+10136    OPTION BASE 0
+10137    COM /Peripherals/ INTEGER Prntr,Kbd,Crt
+10138    DIM Start(20),Stop(20),Spec(20),Spec1(20),Spec2(20),Spec3(20),Spec4(20)
+10139    DIM Label$(5)[30],Data_rev$[50]
+10140    DIM Cal_con1$(1:24,1:2)[18],Cal_con2$(1:24,1:2)[18]
+10141    DIM Cal_con3$(1:24,1:2)[18],Cal_con4$(1:24,1:2)[18]
+10142    INTEGER Last_cond,Last_band,Cal_nums(0:15,0:1),Cal_flag,Tmp(12)
+10143    INTEGER File_found,Temperature
+10144!
+10145!
+10146    File_count=1
+10147    Clr_scr
+10148    Show_message("LOADING DATA FILES")
+10149    FOR Temperature=0 TO 55 STEP 5
+10150       IF File_count<5 THEN 
+10151          Tmp(File_count)=Temperature
+10152          Temp$=VAL$(Temperature)
+10153          IF LEN(Temp$)=1 THEN Temp$="0"&Temp$
+10154          Tmp_mode$="T"&Temp$
+10155          Find_data(@Dat,Model$,Tmp_mode$,"Auto_t",Ser$,File_found)
+10156          IF File_found THEN 
+10157             ENTER @Dat;Data_rev$,Opt$
+10158             SELECT Data_rev$[1,1]
+10159             CASE "a","b","c","d","e","f","g"
+10160                Cal_nums_here=0
+10161             CASE "h","A"
+10162                Cal_nums_here=1
+10163             CASE "B","C"
+10164                Cal_nums_here=2
+10165             CASE ELSE
+10166                Error$=Data_rev$[1,1]
+10167                SUBEXIT
+10168             END SELECT
+10169             SELECT File_count
+10170             CASE 1
+10171                Max_le_parms(Data_rev$[1,1],Start(*),Stop(*),Spec1(*),Label$(*),Tmp_mode$,Opt$,Last_cond,Last_band)
+10172                ALLOCATE Max_dat1(Last_band,Last_cond),Acc_correction1(Last_band)
+10173                ENTER @Dat;Max_dat1(*),Acc_correction1(*)
+10174                SELECT Cal_nums_here
+10175                CASE 0
+10176                CASE 1
+10177                   ENTER @Dat;Cal_nums(*)
+10178                   Chg_cal_list(Cal_nums(*),Cal_con1$(*))
+10179                CASE 2
+10180                   ENTER @Dat;Cal_con1$(*)
+10181                END SELECT
+10182             CASE 2
+10183                Max_le_parms(Data_rev$[1,1],Start(*),Stop(*),Spec2(*),Label$(*),Tmp_mode$,Opt$,Last_cond,Last_band)
+10184                ALLOCATE Max_dat2(Last_band,Last_cond),Acc_correction2(Last_band)
+10185                ENTER @Dat;Max_dat2(*),Acc_correction2(*)
+10186                SELECT Cal_nums_here
+10187                CASE 0
+10188                CASE 1
+10189                   ENTER @Dat;Cal_nums(*)
+10190                   Chg_cal_list(Cal_nums(*),Cal_con2$(*))
+10191                CASE 2
+10192                   ENTER @Dat;Cal_con2$(*)
+10193                END SELECT
+10194             CASE 3
+10195                Max_le_parms(Data_rev$[1,1],Start(*),Stop(*),Spec3(*),Label$(*),Tmp_mode$,Opt$,Last_cond,Last_band)
+10196                ALLOCATE Max_dat3(Last_band,Last_cond),Acc_correction3(Last_band)
+10197                ENTER @Dat;Max_dat3(*),Acc_correction3(*)
+10198                SELECT Cal_nums_here
+10199                CASE 0
+10200                CASE 1
+10201                   ENTER @Dat;Cal_nums(*)
+10202                   Chg_cal_list(Cal_nums(*),Cal_con3$(*))
+10203                CASE 2
+10204                   ENTER @Dat;Cal_con3$(*)
+10205                END SELECT
+10206             CASE 4
+10207                Max_le_parms(Data_rev$[1,1],Start(*),Stop(*),Spec4(*),Label$(*),Tmp_mode$,Opt$,Last_cond,Last_band)
+10208                ALLOCATE Max_dat4(Last_band,Last_cond),Acc_correction4(Last_band)
+10209                ENTER @Dat;Max_dat4(*),Acc_correction4(*)
+10210                SELECT Cal_nums_here
+10211                CASE 0
+10212                CASE 1
+10213                   ENTER @Dat;Cal_nums(*)
+10214                   Chg_cal_list(Cal_nums(*),Cal_con4$(*))
+10215                CASE 2
+10216                   ENTER @Dat;Cal_con4$(*)
+10217                END SELECT
+10218             END SELECT
+10219             ASSIGN @Dat TO *
+10220             File_count=File_count+1
+10221          END IF
+10222       END IF
+10223    NEXT Temperature
+10224 !
+10225 !------------------------------------------
+10226 !       PRINTOUT
+10227 !------------------------------------------
+10228 Print_out:!
+10229    Fail_flag=0
+10230 !
+10231 !-------------------------------------------
+10232 !     SELECT PRINTOUT DEVICE
+10233 !-------------------------------------------
+10234    IF Data_dest$="PRINT" THEN 
+10235       PRINTER IS Prntr
+10236    ELSE
+10237       PRINTER IS Crt
+10238    END IF
+10239    Top_of_page
+10240 !
+10241    OFF KEY 
+10242    GOSUB Heading
+10243 Fmt2:IMAGE /,"--",2D.3D," GHz to ",2D.3D," GHz --data--spec: ",2D.2D," dBm"
+10244 Fmt3:IMAGE 27A,":",X,3D.2D," dBm ",10A
+10245 Ft2:IMAGE /,6("------------"),/,2D.3D," GHz to ",2D.3D," GHz   : ",4(DD," deg C",3X),/,13X,"Specs (dBm)   :",4(2X,2D.2D,4X),/,6("------------")
+10246 Ft3:IMAGE 27A,":",4(X,3D.2D,X,A,2X)
+10247    FOR I=0 TO Last_band
+10248       IF Span=I OR Full OR Span=All_spans THEN 
+10249          PRINT USING Ft2;Start(I),Stop(I),Tmp(1),Tmp(2),Tmp(3),Tmp(4),Spec1(I),Spec2(I),Spec3(I),Spec4(I)
+10250       ELSE
+10251          GOTO Next_i
+10252       END IF
+10253       FOR Cond=0 TO Last_cond
+10254          IF Cond=Max_mode OR Max_mode=All_conds OR Full THEN 
+10255             IF I=Last_band AND Cond=Last_cond THEN Next_cond
+10256             Result$=""
+10257             R1$=" "
+10258             R2$=" "
+10259             R3$=" "
+10260             R4$=" "
+10261             IF Max_dat1(I,Cond)<Spec1(I) THEN 
+10262                R1$="*"
+10263                Fail_flag=1
+10264             END IF
+10265             IF Max_dat2(I,Cond)<Spec2(I) THEN 
+10266                R2$="*"
+10267                Fail_flag=1
+10268             END IF
+10269             IF Max_dat3(I,Cond)<Spec3(I) THEN 
+10270                R3$="*"
+10271                Fail_flag=1
+10272             END IF
+10273             IF Max_dat4(I,Cond)<Spec4(I) THEN 
+10274                R4$="*"
+10275                Fail_flag=1
+10276             END IF
+10277             PRINT USING Ft3;Label$(Cond);Max_dat1(I,Cond),R1$,Max_dat2(I,Cond),R2$,Max_dat3(I,Cond),R3$,Max_dat4(I,Cond),R4$
+10278          END IF
+10279 Next_cond:NEXT Cond
+10280 Ft4:  IMAGE "flatness correction used   :",4(2X,2D.2D,4X)
+10281       PRINT USING Ft4;Acc_correction1(I),Acc_correction2(I),Acc_correction3(I),Acc_correction4(I)
+10282       PRINT TAB(11);
+10283       IF Data_dest$<>"PRINT" THEN 
+10284          OFF KEY 
+10285          ON KEY 5 LABEL "NEXT" GOTO Next_one
+10286          ON KEY 7 LABEL "FIRST" GOTO Print_out
+10287          ON KEY 9 LABEL "EXIT" GOTO Carry_on
+10288          LOOP
+10289          END LOOP
+10290 Next_one:GOSUB Heading
+10291       END IF
+10292 Next_i:NEXT I
+10293!
+10294    IF Fail_flag THEN 
+10295       PRINT "********************** FAILED ********************"
+10296    ELSE
+10297       PRINT " - - - - - - - - - - - PASSED - - - - - - - - - -"
+10298    END IF
+10299!
+10300    IF Cal_nums_here THEN 
+10301       PRINT 
+10302       PRINT "              C A L I B R A T I O N   C O N S T A N T S"
+10303       PRINT 
+10304 Img1: IMAGE 18A,":",5X,4(6X,5A)
+10305       FOR I=1 TO 24
+10306          IF Cal_con1$(I,1)<>"" THEN 
+10307             PRINT USING Img1;Cal_con1$(I,1),Cal_con1$(I,2),Cal_con2$(I,2),Cal_con3$(I,2),Cal_con4$(I,2)
+10308          END IF
+10309       NEXT I
+10310       IF Data_dest$="DISPLAY" THEN CALL Wait_for_cont
+10311    END IF
+10312 Carry_on:!
+10313    PRINTER IS Crt
+10314    SUBEXIT
+10315!
+10316!
+10317 Heading:!
+10318    Clr_scr
+10319    PRINT "===================================================================="
+10320    PRINT TAB(11);"     M A X I M U M   L E V E L E D   P O W E R"
+10321    PRINT TAB(7);" O V E R   T E M P E R A T U R E - w / A U T O _T R A C K"
+10322 Fmt5:IMAGE "====ser #:",4A,"====test rev : ",K,"=========================="
+10323    PRINT USING Fmt5;Ser$,Data_rev$
+10324    RETURN 
+10325 !
+10326 !
+10327 SUBEND
+10328 SUB Chg_cal_list(INTEGER Cal_num(*),Cal_constant$(*))
+10329 Chg_cal_list:!
+10330 !---------------------------------------------------------------!
+10331 ! This routine converts the older list of INTEGER cal locations
+10332 ! and values into the newer convention of using strings
+10333 !---------------------------------------------------------------!
+10334    DIM Cal_conversion$[250],Cal_name$[18],Cal_line$[80]
+10335    INTEGER I,Ptr
+10336 !
+10337    DATA "#2  YTM BX DLY 2,  #9  YTM GAIN 1,"
+10338    DATA "#3  YTM BX DLY 3,  #10 YTM GAIN 2,"
+10339    DATA "#4  YTM BX DLY 4,  #11 YTM GAIN 3,"
+10340    DATA "#5  YTM DLY 1,     #12 YTM GAIN 4,"
+10341    DATA "#6  YTM DLY 2,     #50 YTM BX GAIN 2,"
+10342    DATA "#7  YTM DLY 3,     #51 YTM BX GAIN 3,"
+10343    DATA "#8  YTM DLY 4,     #52 YTM BX GAIN 4,"
+10344    DATA "end"
+10345 !
+10346    RESTORE Chg_cal_list
+10347    LOOP
+10348       READ Cal_line$
+10349    EXIT IF Cal_line$="end"
+10350       Cal_conversion$=Cal_conversion$&Cal_line$
+10351    END LOOP
+10352 !
+10353    FOR I=0 TO 15
+10354       IF Cal_num(I,0)<>0 THEN 
+10355          Ptr=POS(Cal_conversion$,"#"&VAL$(Cal_num(I,0)))
+10356          Cal_name$=Cal_conversion$[Ptr+4,Ptr+18]
+10357          Cal_constant$(I+1,1)=Cal_name$[1,POS(Cal_name$,",")-1]
+10358          OUTPUT Cal_constant$(I+1,2) USING "#,5D";Cal_num(I,1)
+10359       END IF
+10360    NEXT I
+10361 !
+10362 SUBEND
+10363 !
+10364 !
+10365 !
+
+
+
+10366 SUB Auto_t_smy(Model$,Ser$,Test_mode$,Data_dest$,Error$)
+10367 Auto_t_smy:!
+10368    Max_le_smy(Model$,Ser$,Test_mode$,Data_dest$,Error$)
+10369 SUBEND
+10370 !
+10371 !
+
+
+
+
+10372 SUB Twball(Model$,Ser_no$,Opt$,Jan_mode$,Test_mode$,INTEGER Pass_fail,Depend)
+10373 Twball:!
+10374 ! **************************************************************
+10375 !
+10376 !   M I N I M U M   M A X I M U M   L E V E L E D   P O W E R
+10377 !
+10378 !                    08/11/86
+10379 !
+10380 ! **************************************************************
+10381 ! Revision Log :
+10382 !
+10383 ! **************************************************************
+10384    Rev$="A     08.11.86" !     MD
+10385 !
+10386 ! **************************************************************
+10387 !
+10388 ! *****************************************
+10389 !      I N I T I A L I Z A T I O N
+10390 ! *****************************************
+10391    COM /Hpib_codes/ @Dut,@Sa,@Sb,@Co,@Pw,@Dvm,@Fun_gen,@Rfgen,@Het,@Mod_an,@Atn
+10392    COM /Hpib_codes/ @Timer,@D13,@D14,@D15,@D16
+10393    COM /Power_data/ Power_cal(*),INTEGER Num_of_freqs,Num_of_pwrs,S_n,Data_mode,Rev_code$
+10394    COM /Peripherals/ INTEGER Print,Kbd,Crt
+10395    COM /Chamber/ Temperature,Humidity,INTEGER Set_flag,Power_on_flag
+10396 !
+10397    DIM Start(1:20),Stop(1:20),Condition$(1:20)[27],Data_rev$[50]
+10398    DIM Main_menu_keys$(0:9)[15],Key_choice$[15],Spec(1:20,1:20)
+10399    DIM Out_menu_keys$(0:9)[15]
+10400    INTEGER Num_bands,Num_conds,Selected_band,Selected_mode
+10401    INTEGER Peak_enabled,Fail_flag,Num_checks,Broke
+10402 !
+10403 !
+10404    INTEGER Ptr,Cal_value,Cal_loc,Error_code
+10405    DIM Cal_constant$(1:24,1:2)[18],Cal_name$[18]
+10406    Depend=0!...not used in this program
+10407    Hdr$=Rev$[1,1]&Opt$ !.....Defined Hrd$
+10408    Clr_scr
+10409    Show_message("2-BALL MAXIMUM LEVELED POWER : Initializing")
+10410    OFF KEY 
+10411 !
+10412 !===========================================
+10413 !---- LOAD DATA FOR TEST FROM SUBPROGRAM ---
+10414 !===========================================
+10415    Twball_parms(Test_mode$,Rev$,Start(*),Stop(*),Spec(*),Condition$(*),Wait_rf,Wait_level,Add_test_marg,Num_bands,Num_conds,Num_checks,Opt$)
+10416    ALLOCATE Max_dat(1:Num_conds,1:Num_bands),Acc_correction(1:Num_bands)
+10417 !
+10418 !
+10419 !===========================================
+10420 !------ GET Pwracc DATA INTO COMMON -------
+10421 !===========================================
+10422    Get_pwr_data(Model$,Ser_no$,Test_mode$,Data_rev$,D_opt$,Error_code)
+10423    IF Error_code=1 THEN 
+10424       Clr_scr
+10425       PRINT "THERE IS NO DATA FOR OUTPUT POWER ACCURACY"
+10426       PRINT 
+10427       PRINT "This is required to run Maximum Leveled"
+10428       PRINT "power.  Return to the Test Menu and run"
+10429       PRINT "Output Power Accuracy."
+10430       BEEP 
+10431       SELECT Test_mode$
+10432       CASE "FSP","FSV","FSC"
+10433          PRINT 
+10434          PRINT "Press CarryOn to return to the Test Menu."
+10435          Wait_for_cont
+10436       CASE ELSE
+10437          SELECT Jan_mode$
+10438          CASE "MENU"
+10439             DISP "press continue to return to JANITOR"
+10440             PAUSE
+10441          CASE ELSE
+10442             DUMP ALPHA
+10443          END SELECT
+10444       END SELECT
+10445       SUBEXIT
+10446    END IF
+10447 !
+10448 !===========================================
+10449 !----CALCULATE POWER ACCURACY CORRECTIONS---
+10450 !===========================================
+10451 Flat_correction:!
+10452    DISP "CALCULATING ACCURACY CORRECTIONS FOR EACH BAND..."
+10453 Accuracy_check:!
+10454    FOR J=1 TO Num_of_freqs
+10455       Freq=Power_cal(0,J)
+10456       Pwr_data(20,Freq,Prog_pwr,Meas_error,Error_code)
+10457       FOR I=1 TO Num_bands
+10458          IF Freq>=Start(I) AND Freq<=Stop(I) AND Meas_error<Acc_correction(I) THEN 
+10459             Acc_correction(I)=Meas_error
+10460          END IF
+10461       NEXT I
+10462    NEXT J
+10463 !
+10464 !==========================================
+10465 !---------  DISPLAY TEST MENU -------------
+10466 !==========================================
+10467    IF Jan_mode$<>"MENU" THEN 
+10468       GOSUB Full_test
+10469       IF Test_mode$="EI_" THEN 
+10470          Twball_out(Model$,Ser_no$,Test_mode$,"PRINT",Error$,Hdr$,Max_dat(*),Acc_correction(*),Cal_constant$(*))
+10471       END IF
+10472       SUBEXIT
+10473    END IF
+10474!
+10475 Testmenu:  !
+10476    DATA   "FULL" , "" , "SELECT" , "" , "CORRECT"
+10477    DATA   ""     , ""       , ""        , "" , "EXIT"
+10478    RESTORE Testmenu
+10479    READ Main_menu_keys$(*)
+10480    Wrt_menu_str("DISP LINE LABEL","SELECT SOFT KEY")
+10481    REPEAT
+10482       Abort_flag=0
+10483       Clr_scr
+10484       OFF KEY 
+10485       PRINT "-------------------------------------------------"
+10486       PRINT "    2-BALL MAXIMUM LEVELED POWER VERIFICATION"
+10487       PRINT "      rev : ";Rev$;"       S/N  : ";Ser_no$
+10488       PRINT "-------------------------------------------------"
+10489       PRINT 
+10490       PRINT "SELECT SOFT KEY :"
+10491       PRINT 
+10492       PRINT "  FULL:    FULL test."
+10493       PRINT "  SELECT:  SELECT from list of conditions."
+10494       PRINT "  CORRECT: View accuracy CORRECTions to be used."
+10495       IF Data_taken THEN 
+10496          PRINT "  DATA:    View stored data."
+10497          Main_menu_keys$(3)="DATA"
+10498       END IF
+10499       PRINT "  EXIT:    Return to the Test Menu."
+10500       PRINT 
+10501       Get_key_choice(Key_choice$,Main_menu_keys$(*),"KEY")
+10502       SELECT Key_choice$
+10503       CASE "FULL"
+10504          GOSUB Full_test
+10505       CASE "SELECT"
+10506          GOSUB Select_test
+10507       CASE "CORRECT"
+10508          GOSUB View_correct
+10509       CASE "DATA"
+10510          GOSUB Output_menu
+10511       END SELECT
+10512    UNTIL Key_choice$="EXIT"
+10513    SUBEXIT
+10514   !
+10515   !________________________________________
+10516   !
+10517 View_correct:  !
+10518    Clr_scr
+10519    PRINT "WORST CASE POWER ACCURACY FOR EACH BAND..."
+10520    PRINT 
+10521    PRINT "  start     stop     dB"
+10522    PRINT "------------------------"
+10523 Fmt9:IMAGE 2X,2D.2D," to ",2D.2D,X,SDD.2D
+10524    FOR I=1 TO Num_bands
+10525       PRINT USING Fmt9;Start(I),Stop(I),Acc_correction(I)
+10526    NEXT I
+10527    Wait_for_cont
+10528    RETURN 
+10529 !
+10530 !
+10531 Auto_track:!
+10532    IF Auto_track THEN 
+10533       Show_message("** AUTO TRACKING **")
+10534       OUTPUT @Dut;"SHRP"
+10535       Clr_scr
+10536    END IF
+10537    RETURN 
+10538 !
+10539 !
+10540 Full_test:  !
+10541    !
+10542    !*********************************************************************!
+10543    !*********************************************************************!
+10544    !
+10545    OFF KEY 
+10546    Clr_scr
+10547    SELECT Test_mode$
+10548    CASE "FSA","FSC","FSP","FSV"
+10549       Instr_present(@Dut,"Device Under Test")
+10550       PRINT "**************************************************"
+10551       PRINT 
+10552       PRINT "Connect a 20 dB attenuator to the DUT's RF output!"
+10553       PRINT 
+10554       PRINT "**************************************************"
+10555       Wait_for_cont
+10556    END SELECT
+10557    Auto_track=1
+10558    Full_flag=1
+10559    Fail_flag=0
+10560    FOR Selected_mode=1 TO Num_conds
+10561       GOSUB Auto_track
+10562       FOR Selected_band=1 TO Num_bands
+10563          GOSUB Do_test
+10564          Max_dat(Selected_mode,Selected_band)=Max_power
+10565          IF Abort_flag THEN 
+10566             Selected_band=Num_bands+1
+10567             Selected_mode=Num_conds+1
+10568          END IF
+10569       NEXT Selected_band
+10570    NEXT Selected_mode
+10571    IF NOT Abort_flag THEN 
+10572       GOSUB Save_cals
+10573       GOSUB Store_data
+10574       IF Fail_flag THEN 
+10575          Fail_count(Pass_fail)
+10576          Result$="FAILED"
+10577       ELSE
+10578          Pass_count(Pass_fail)
+10579          Result$="PASSED"
+10580       END IF
+10581    END IF
+10582    Data_taken=1
+10583    RETURN 
+10584    !
+10585    !.....automatic printout of data decided here
+10586    IF Jan_mode$<>"MENU" AND Test_mode$="EI_" THEN 
+10587       Max_le_test_out(Model$,Ser_no$,Test_mode$,"PRINT",Error$,Auto_track)
+10588       SUBEXIT
+10589    END IF
+10590    IF Jan_mode$<>"MENU" THEN SUBEXIT
+10591   !
+10592   !________________________________________
+10593   !
+10594 Select_test:  !
+10595    Full_flag=0
+10596    Fail_flag=0
+10597    Clr_scr
+10598    SELECT Test_mode$
+10599    CASE "FSA","FSC","FSP","FSV"
+10600       Instr_present(@Dut,"Device Under Test")
+10601       PRINT "**************************************************"
+10602       PRINT 
+10603       PRINT "Connect a 20 dB attenuator to the DUT's RF output!"
+10604       PRINT 
+10605       PRINT "**************************************************"
+10606       Wait_for_cont
+10607    END SELECT
+10608    GOSUB Pick_em
+10609    GOSUB Auto_track
+10610    GOSUB Do_test
+10611    RETURN 
+10612   !
+10613   !________________________________________
+10614   !
+10615 Pick_em:  !
+10616    Clr_scr
+10617    PRINT "  M A X I M U M   L E V E L E D   P O W E R "
+10618    PRINT "  _________________________________________"
+10619    PRINT "         rev : ";Rev$
+10620    PRINT 
+10621    PRINT "SELECT A DESIRED CONDITION :"
+10622    PRINT 
+10623    FOR I=1 TO Num_conds
+10624       PRINT I;Condition$(I)
+10625    NEXT I
+10626    INPUT "WHICH ONE :",Selected_mode
+10627    IF Selected_mode>Num_conds OR Selected_mode<1 THEN Pick_em
+10628    !
+10629 Enter_span:   !
+10630    Clr_scr
+10631    PRINT "mode : ";Condition$(Selected_mode)
+10632    PRINT 
+10633    PRINT "SELECT A DESIRED START/STOP FREQ :"
+10634    PRINT 
+10635 Fmt1:IMAGE 3X,DD," : ",2D.3D," GHz to ",2D.3D," GHz"
+10636    FOR I=1 TO Num_bands
+10637       PRINT USING Fmt1;I,Start(I),Stop(I)
+10638    NEXT I
+10639    INPUT "ENTER #",Selected_band
+10640    IF Selected_band>Num_bands OR Selected_band<0 THEN Enter_span
+10641    Clr_scr
+10642    Auto_track=FNYes("DO YOU WANT AN AUTO-TRACKING DONE ?")
+10643    RETURN 
+10644  !
+10645  !
+10646 Do_test: !****************************************************
+10647    PRINT "--------------------------------------------------"
+10648 Im1:IMAGE "Now testing : ",2D.3D," GHz to ",2D.3D," GHz"
+10649 Im2:IMAGE "meas = ",SDD.DD," dBm   spec = ",SDD.DD," dBm",X,10A
+10650    PRINT USING Im1;Start(Selected_band),Stop(Selected_band)
+10651    PRINT Condition$(Selected_mode)
+10652    IF POS(Condition$(Selected_mode),"MANUAL SWEEP") THEN 
+10653       GOSUB Manual_swp_test
+10654    ELSE
+10655       GOSUB Swept_test
+10656    END IF
+10657    IF Abort_flag THEN RETURN 
+10658    IF Max_power>=Spec(Selected_mode,Selected_band) THEN 
+10659       Result$=" *passed* "
+10660    ELSE
+10661       Result$="<---FAILED"
+10662       Fail_flag=1
+10663    END IF
+10664    PRINT USING Im2;Max_power,Spec(Selected_mode,Selected_band),Result$
+10665    PRINT "flatness correction used = "&VAL$(Acc_correction(Selected_band))&" dB"
+10666    PRINT "--------------------------------------------------"
+10667    IF Full_flag THEN 
+10668       Max_dat(Selected_mode,Selected_band)=Max_pwr
+10669    ELSE
+10670       Wait_for_cont
+10671    END IF
+10672    RETURN 
+10673  !
+10674 !==========================================
+10675 Output_menu: !------------------------------
+10676 !==========================================
+10677    DATA   "DISPLAY" , "" , "" , "" , "PRINT"
+10678    DATA   ""        , "" , "" , "" , "EXIT"
+10679    RESTORE Output_menu
+10680    READ Out_menu_keys$(*)
+10681    REPEAT
+10682       Clr_scr
+10683       OFF KEY 
+10684       PRINT "-------------------------------------------------"
+10685       PRINT " 2-BALL  M A X I M U M  L E V E L E D  P O W E R "
+10686       PRINT "-------------------------------------------------"
+10687       PRINT "               rev : ";Rev$
+10688       PRINT 
+10689       PRINT 
+10690       PRINT "     Instrument # ";Ser_no$;" : ";Result$
+10691       PRINT 
+10692       PRINT "Select soft-key :"
+10693       PRINT 
+10694       PRINT "    DISPLAY :  display results on CRT."
+10695       PRINT "    PRINT   :  print hardcopy of results."
+10696       Get_key_choice(Data_dest$,Out_menu_keys$(*),"KEY")
+10697       SELECT Data_dest$
+10698       CASE "PRINT","DISPLAY"
+10699          GOSUB Print_all
+10700       END SELECT
+10701    UNTIL Data_dest$="EXIT"
+10702    RETURN 
+10703 !
+10704 Print_all: !
+10705    Hdr$=Rev$[1,1]&Opt$
+10706    Twball_out(Model$,Ser_no$,Test_mode$,Data_dest$,Error$,Hdr$,Max_dat(*),Acc_correction(*),Cal_constant$(*))
+10707    RETURN 
+10708 !-----------------------------------------
+10709 !-----------------------------------------
+10710 !
+10711 !
+10712 !==========================================
+10713 !==========================================
+10714 !-------CHECK MAX POWER IN CW MODE---------
+10715 !==========================================
+10716 !==========================================
+10717 !
+10718 !
+10719 Manual_swp_test: !***********************************************
+10720    ON KEY 9 LABEL "ABORT" GOSUB Abort
+10721    OUTPUT @Dut;"IP PL0DB"
+10722  !
+10723 Initialize: !
+10724    Step_size=.1
+10725    Broke=-5
+10726    H_hres=0   !..low resolution steps
+10727    IF POS(Condition$(Selected_mode),"PEAKING ON") AND Selected_band<>1 THEN ! ... Added to prevent Band 0 peaking.
+10728       Peak_enabled=1
+10729    ELSE
+10730       Peak_enabled=0
+10731    END IF
+10732    Peak_flag=0
+10733    No_of_lvls=11
+10734    Freq=Stop(Selected_band)
+10735    Power=Spec(Selected_mode,Selected_band)+ABS(Acc_correction(Selected_band))+Add_test_marg  !...checks to see if it squeggs at spec power plus margin.
+10736    Done_flag=0
+10737    OUTPUT @Dut;"IP PL0DB FA";Start(Selected_band);"GZ FB";Stop(Selected_band);"GZ"
+10738    OUTPUT @Dut;"PL";Power;"DB"
+10739    GOSUB Set_freq
+10740  !
+10741    Done_flag=0
+10742    REPEAT
+10743       GOSUB Is_it_lvld
+10744       IF Unlvl THEN 
+10745          No_of_lvls=0
+10746          IF H_hres THEN 
+10747             Power=Power-.05
+10748             IF Power<Broke THEN Done_flag=1 !.....it's broken
+10749             OUTPUT @Dut;"PL";Power;"DB"
+10750          ELSE
+10751             H_hres=1
+10752             Freq=Freq+Step_size!.....back up
+10753             GOSUB Set_freq
+10754          END IF
+10755       ELSE
+10756          No_of_lvls=No_of_lvls+1
+10757          IF No_of_lvls>10 THEN 
+10758             Freq=Freq-Step_size
+10759             H_hres=0
+10760          ELSE
+10761             Freq=Freq-Step_size/10
+10762          END IF
+10763          GOSUB Set_freq
+10764       END IF
+10765    UNTIL Done_flag OR Abort_flag
+10766    Max_power=Power+Acc_correction(Selected_band)
+10767    RETURN 
+10768   !
+10769   !
+10770 Set_freq:  !------------------------------------------
+10771    IF Freq>Stop(Selected_band) THEN Freq=Stop(Selected_band)
+10772    IF Freq<Start(Selected_band) THEN 
+10773       Done_flag=1
+10774       Freq=Start(Selected_band)
+10775    END IF
+10776    OUTPUT @Dut;"S3";Freq;"GZ"
+10777    Peak_flag=0
+10778    RETURN 
+10779   !
+10780 Is_it_lvld:  !---------------------------------
+10781    Unlvl=0
+10782    WAIT Wait_level
+10783    IF FNExtended_status(@Dut,64) THEN 
+10784       IF NOT Peak_flag AND Peak_enabled THEN 
+10785          OUTPUT @Dut;"RP1,RP0"
+10786          Peak_flag=1
+10787       END IF
+10788       OUTPUT @Dut;"RF0"
+10789       WAIT Wait_rf !....Very precise scientifically calculated time
+10790                    !....interval which serves to appease the squegging
+10791                    !....GODS.
+10792       OUTPUT @Dut;"RF1"
+10793       WAIT Wait_level !.... Makes sure that the spheres are thouroughly
+10794                       !.... heated before it's checked for leveled power.
+10795       Unlvl=FNExtended_status(@Dut,64)
+10796    END IF
+10797    RETURN 
+10798 !
+10799 !===========================================
+10800 !===========================================
+10801 !-------CHECK MAX POWER IN SWEPT MODES------
+10802 !===========================================
+10803 !===========================================
+10804 !
+10805 Swept_test:!
+10806    ON KEY 9 LABEL "ABORT" GOSUB Abort
+10807    OUTPUT @Dut;"IP PL0DB"
+10808    OUTPUT @Dut;"FA";Start(Selected_band);"GZ FB";Stop(Selected_band);"GZ"
+10809    !
+10810    SELECT TRIM$(Condition$(Selected_mode))
+10811    CASE "MANUAL SWEEP; PEAKING ON"
+10812       RETURN 
+10813    CASE "MANUAL SWEEP; PEAKING OFF"
+10814       RETURN 
+10815    CASE "ALT: SNGL(AUTO),IP(-9dBm)"
+10816       OUTPUT @Dut;"S2 STAU SV2 IP PL-9DB SV1 RC2 AL1 1"
+10817    CASE "SNGL SWP(AUTO); DF=100MHz"
+10818       OUTPUT @Dut;"SHCF.1GZ S2 DF100MZ STAU"
+10819    CASE "CONT SWP(AUTO); FULL BAND"
+10820       OUTPUT @Dut;"S1 STAU"
+10821    CASE "SNGL SWP(.5SC); FULL BAND"
+10822       OUTPUT @Dut;"S2 ST.5SC"
+10823    CASE "SNGL SWP(AUTO); FULL BAND"
+10824       OUTPUT @Dut;"S2 STAU"
+10825    !
+10826    END SELECT
+10827    !
+10828    Freq=Stop(Selected_band)
+10829    Power=Spec(Selected_mode,Selected_band)+ABS(Acc_correction(Selected_band))+Add_test_marg
+10830    Counter=0
+10831    Broke=-5
+10832    Dbl_chk=0
+10833    Give_up=0
+10834    Unlvl=0
+10835    !
+10836    LOOP
+10837       OUTPUT @Dut;"PL";Power;"DB"
+10838       IF Freq>=2.3 THEN 
+10839          REPEAT
+10840             Counter=Counter+1
+10841             GOSUB Check_level
+10842             IF Unlvl OR Counter=Num_checks THEN Hell_freezes=1
+10843          UNTIL Hell_freezes
+10844       ELSE
+10845          GOSUB Check_level
+10846       END IF
+10847    EXIT IF NOT Unlvl OR Give_up
+10848       Power=Power-.05
+10849       IF Power<=Broke THEN Give_up=1
+10850    END LOOP
+10851    Max_power=Power+Acc_correction(Selected_band)
+10852    RETURN 
+10853    !
+10854 Take_sweep:  !
+10855    SELECT TRIM$(Condition$(Selected_mode))
+10856    CASE "SNGL SWP(AUTO); DF=100MHz"
+10857       OUTPUT @Dut;"CF";Start(Selected_band)+.05;"GZ"
+10858       FOR Freq=Start(Selected_band)+.05 TO Stop(Selected_band)-.05 STEP .1
+10859          OUTPUT @Dut;"TSUP"
+10860       NEXT Freq
+10861    CASE "CONT SWP(AUTO); FULL BAND"
+10862       WAIT .3
+10863    CASE "SNGL SWP(.5SC); FULL BAND"
+10864       OUTPUT @Dut;"TS TS"
+10865    CASE "ALT: SNGL(AUTO),IP(-9dBm)"
+10866       OUTPUT @Dut;"TS TS TS"
+10867    CASE "SNGL SWP(AUTO); FULL BAND"
+10868       OUTPUT @Dut;"TS TS TS"
+10869    END SELECT
+10870    RETURN 
+10871 !
+10872 Check_level:!
+10873 !
+10874    OUTPUT @Dut;"CS"
+10875    GOSUB Take_sweep
+10876    OUTPUT @Dut;"OS"      !....FNUnleveled has a CS in it
+10877    ENTER @Dut USING "#,B";Stat,Ext
+10878    Unlvl=BIT(Ext,6)
+10879 !
+10880    RETURN 
+10881 !
+10882 Abort:!
+10883    Abort_flag=1
+10884    RETURN 
+10885 !
+10886  !
+10887  !
+10888 Save_cals: !
+10889    RESTORE Save_cals
+10890    DATA "YTM GAIN 1"       ,"YTM BX GAIN 1"
+10891    DATA "YTM GAIN 2"       ,"YTM BX GAIN 2"
+10892    DATA "YTM GAIN 3"       ,"YTM BX GAIN 3"
+10893    DATA "YTM GAIN 4"       ,"YTM BX GAIN 4"
+10894    DATA "YTM OFFSET 1"     ,"YTM BX DLY 2"
+10895    DATA "YTM OFFSET 2"     ,"YTM BX DLY 3"
+10896    DATA "YTM OFFSET 3"     ,"YTM BX DLY 4"
+10897    DATA "YTM OFFSET 4"     ,"YTM SGL BD RT"
+10898    DATA "YTM DLY 1"        ,"YTM MLT BD RT"
+10899    DATA "YTM DLY 2"        ,"YTM BX RTA"
+10900    DATA "YTM DLY 3"        ,"YTM BX RTB"
+10901    DATA "YTM DLY 4"        ,"MAX SWEEP RATE"
+10902    DATA "end"
+10903    !
+10904    !
+10905    !.......read the list of cal constants to save
+10906    Ptr=1
+10907    REPEAT
+10908       READ Cal_name$
+10909       IF Cal_name$<>"end" THEN 
+10910          Cal_constant$(Ptr,1)=Cal_name$
+10911          Ptr=Ptr+1
+10912       END IF
+10913    UNTIL Cal_name$="end" OR Ptr>24
+10914    !
+10915    !......now try to load these cal constants
+10916    FOR I=1 TO Ptr-1
+10917       Cal_loc=FNCal_location(Cal_constant$(I,1))
+10918       IF Cal_loc<>0 THEN 
+10919          Cal_value=FNRead_cal(@Dut,Cal_loc)
+10920          OUTPUT Cal_constant$(I,2) USING "#,5D";Cal_value
+10921       ELSE
+10922          Cal_constant$(I,2)="-----"
+10923       END IF
+10924    NEXT I
+10925    RETURN 
+10926  !
+10927  !_________________________________________
+10928  !
+10929  !           STORE DATA
+10930  !_________________________________________
+10931  !
+10932 Store_data: !
+10933    Show_message("** STORING DATA **")
+10934    File_name$="Twball"
+10935    Prep_data_file(@File,Model$,Test_mode$,File_name$,Ser_no$,6)
+10936    OUTPUT @File;FNData_tag$(Rev$[1,1]),Opt$,Max_dat(*),Acc_correction(*),Cal_constant$(*)
+10937    ASSIGN @File TO *
+10938    Clr_scr
+10939    RETURN 
+10940  !
+10941  !
+10942 SUBEND
+10943  !
+10944 !###########################################
+10945 !###########################################
+10946 !
+10947 SUB Twball_out(Model$,Ser$,Test_mode$,Data_dest$,Error$,OPTIONAL Hdr$,Max(*),Flat(*),Cal_con$(*))
+10948 Twball_out:!
+10949!
+10950!****************************************************
+10951!
+10952! 2-BALL  M A X I M U M   L E V E L E D  P O W E R
+10953!      O U T P U T    S U B P R O G R A M
+10954!
+10955!*****************************************************
+10956!
+10957    COM /Peripherals/ INTEGER Prntr,Kbd,Crt
+10958    DIM Start(1:20),Stop(1:20)
+10959    DIM Condition$(1:20)[27],Data_rev$[50]
+10960    DIM Cal_constant$(1:24,1:2)[18]
+10961    INTEGER Num_bands,Num_conds,Cal_nums_here,Tmp(12)
+10962    INTEGER File_found,Ptr,Left,Num_checks
+10963!
+10964!--------------------------------------------
+10965!     FIND DATA TO PRINTOUT
+10966!--------------------------------------------
+10967    IF NPAR=5 THEN 
+10968       File_name$="Twball"
+10969       Find_data(@Dat,Model$,Test_mode$,File_name$,Ser$,File_found)
+10970       IF File_found THEN 
+10971          ENTER @Dat;Data_rev$,Opt$
+10972          SELECT Data_rev$[1,1]
+10973          CASE "A"
+10974          CASE ELSE
+10975             Err$=Data_rev$[1,1]
+10976             SUBEXIT!........cannot print this revision of data
+10977          END SELECT
+10978          Twball_parms(Test_mode$,Data_rev$[1,1],Start(*),Stop(*),Spec(*),Condition$(*),W_rf,W_lev,Add_test,Num_bands,Num_conds,Num_checks,Opt$)
+10979          ALLOCATE Max_dat(1:Num_conds,1:Num_bands),Acc_correction(1:Num_bands)
+10980!
+10981          ENTER @Dat;Max_dat(*),Acc_correction(*),Cal_constant$(*)
+10982          ASSIGN @Dat TO *
+10983       ELSE
+10984          Error$="?"
+10985          SUBEXIT
+10986       END IF
+10987    ELSE
+10988       Data_rev$=FNData_tag$(Hdr$[1,1])
+10989       Opt$=Hdr$[2]
+10990       Twball_parms(Test_mode$,Data_rev$[1,1],Start(*),Stop(*),Spec(*),Condition$(*),W_rf,W_lev,Add_test,Num_bands,Num_conds,Num_checks,Opt$)
+10991       ALLOCATE Max_dat(1:Num_conds,1:Num_bands),Acc_correction(1:Num_bands)
+10992       FOR I=1 TO Num_bands
+10993          Acc_correction(I)=Flat(I)
+10994          FOR J=1 TO Num_conds
+10995             Max_dat(J,I)=Max(J,I)
+10996          NEXT J
+10997       NEXT I
+10998 !
+10999       FOR J=1 TO 2
+11000          FOR I=1 TO 24
+11001             Cal_constant$(I,J)=Cal_con$(I,J)
+11002          NEXT I
+11003       NEXT J
+11004    END IF
+11005 !
+11006 !------------------------------------------
+11007 !       PRINTOUT
+11008 !------------------------------------------
+11009 Print_out:!
+11010    Fail_flag=0
+11011 !
+11012 !-------------------------------------------
+11013 !     SELECT PRINTOUT DEVICE
+11014 !-------------------------------------------
+11015    SELECT Data_dest$
+11016    CASE "PRINT"
+11017       PRINTER IS Prntr
+11018    CASE "DISPLAY"
+11019       PRINTER IS Crt
+11020    END SELECT
+11021    Top_of_page
+11022 !
+11023    OFF KEY 
+11024    GOSUB Heading
+11025 Fmt2:IMAGE /,"--",2D.3D," GHz to ",2D.3D," GHz   meas    spec  [dBm]"
+11026 Fmt3:IMAGE 27A,":",3D.2D,2X,3D.2D,X,K
+11027    FOR Band=1 TO Num_bands
+11028       PRINT USING Fmt2;Start(Band),Stop(Band)
+11029       FOR Cond=1 TO Num_conds
+11030          Result$=""
+11031          IF Max_dat(Cond,Band)<Spec(Cond,Band) THEN 
+11032             Result$="<==<<"
+11033             Fail_flag=1
+11034          END IF
+11035          PRINT USING Fmt3;Condition$(Cond),Max_dat(Cond,Band),Spec(Cond,Band),Result$
+11036       NEXT Cond
+11037       PRINT "Pwr accy factor used [dB]  :";
+11038       PRINT USING "X,2D.2D,K";Acc_correction(Band),"   -----"
+11039       IF Data_dest$="DISPLAY" THEN 
+11040          OFF KEY 
+11041          ON KEY 5 LABEL "NEXT" GOTO Next_one
+11042          ON KEY 7 LABEL "FIRST" GOTO Print_out
+11043          ON KEY 9 LABEL "EXIT" GOTO Sbexit
+11044          LOOP
+11045          END LOOP
+11046 Next_one:      !
+11047          GOSUB Heading
+11048       END IF
+11049    NEXT Band
+11050!
+11051    PRINT 
+11052    IF Fail_flag THEN 
+11053       PRINT "********************** FAILED ********************"
+11054    ELSE
+11055       PRINT " - - - - - - - - - - - PASSED - - - - - - - - - -"
+11056    END IF
+11057!
+11058    SELECT Test_mode$
+11059    CASE "FSP","FSV","FSC"
+11060    ! Do Not Print Cal Constants
+11061    CASE ELSE
+11062       PRINT 
+11063       PRINT "CAL CONSTANT       VALUE  CAL CONSTANT       VALUE"
+11064       PRINT "--------------------------------------------------"
+11065 Img1: IMAGE  #,18A,":",5A,2X
+11066 Img2: IMAGE  #,18A,":",5A
+11067       Left=1
+11068       FOR Ptr=1 TO 24
+11069          IF Cal_constant$(Ptr,1)<>"" THEN 
+11070             IF Left THEN 
+11071                PRINT USING Img1;Cal_constant$(Ptr,1),Cal_constant$(Ptr,2)
+11072                Left=0
+11073             ELSE
+11074                PRINT USING Img2;Cal_constant$(Ptr,1),Cal_constant$(Ptr,2)
+11075                Left=1
+11076                PRINT 
+11077             END IF
+11078          END IF
+11079       NEXT Ptr
+11080!
+11081       IF Data_dest$="DISPLAY" THEN CALL Wait_for_cont
+11082    END SELECT
+11083 Sbexit:   !
+11084    PRINTER IS Crt
+11085    SUBEXIT
+11086!
+11087!
+11088 Heading:!
+11089    Clr_scr
+11090    PRINT USING "K,5A,K,4A,K";"======== model : ",Model$," ===== s/n : ",Ser$," =========="
+11091    SELECT Test_mode$
+11092    CASE "T00" TO "T99"
+11093       PRINT " 2-BALL  M A X I M U M   L E V E L E D   P O W E R "
+11094       PRINT "temperature = "&Test_mode$[2,3]&" deg C";
+11095    CASE "EI_"
+11096       PRINT "<EI> 2-BALL  M A X I M U M   L E V E L E D  P O W E R"
+11097    CASE "CF_"
+11098       PRINT " 2-BALL  M A X I M U M   L E V E L E D   P O W E R"
+11099    CASE "FSA","FSC","FSP","FSV"
+11100       PRINT "     M A X I M U M   L E V E L E D   P O W E R"
+11101    END SELECT
+11102 Fmt5:IMAGE "   test rev : ",K
+11103    PRINT USING Fmt5;Data_rev$
+11104    PRINT "=================================================="
+11105    RETURN 
+11106 !
+11107 !
+11108 SUBEND
+11109 !
+11110 !
+11111 !###########################################
+11112 !###########################################
+11113 !
+11114 SUB Twball_parms(Test_mode$,Rev$,Start(*),Stop(*),Spec(*),Condition$(*),W_rf,W_lev,Add_marg,INTEGER Num_bands,Num_conds,Num_checks,OPTIONAL Opt$)
+11115 Twball_parms:!
+11116!********************************************
+11117!
+11118!  M I N I M U M   M A X I M U M   L E V E L E D
+11119!    P O W E R   D A T A   S U B P R O G R A M
+11120!
+11121!   08.11.86                    Mark Dunn
+11122!********************************************
+11123!
+11124!_____________________________________________
+11125!
+11126!         STORE TEST CONDITIONS :
+11127!_____________________________________________
+11128!
+11129!
+11130    DIM Cond$[50]
+11131    INTEGER J
+11132    Num_bands=0
+11133    Num_conds=0
+11134    Num_checks=5
+11135    W_rf=.5       !...Sec
+11136    W_lev=5       !...Sec
+11137    Add_marg=1    !...dB
+11138    !
+11139    DISP "CALCULATING SPECS ";
+11140    SELECT 1
+11141    CASE FNDut_has("H02",Opt$)
+11142       RESTORE Freq_data_h02
+11143    CASE FNDut_has("H19",Opt$)
+11144       RESTORE Freq_data_h19
+11145    CASE NOT FNDut_has("ATTEN",Opt$)
+11146       RESTORE Freq_data_h03
+11147    CASE FNDut_has("GOOD HARMON",Opt$)
+11148       RESTORE Freq_data_h02
+11149    END SELECT
+11150    LOOP
+11151       READ Start_freq
+11152    EXIT IF Start_freq<0
+11153       Num_bands=Num_bands+1
+11154       DISP ".";
+11155       Start(Num_bands)=Start_freq
+11156       READ Stop(Num_bands)
+11157    END LOOP
+11158    DISP 
+11159   !
+11160 Freq_data_h02:!
+11161    DATA .01,2.399999999
+11162    DATA 2.3,6.999999999
+11163    DATA 6.9,13.499999999
+11164    DATA 13.35,17.999999999
+11165    DATA  18,20
+11166    DATA -99
+11167!
+11168 Freq_data_h19:!
+11169    DATA .01,2.399999999
+11170    DATA 2.3,6.999999999
+11171    DATA 6.9,13.499999999
+11172    DATA 13.35,18.59999999
+11173    DATA  18.6,19
+11174    DATA -99
+11175!
+11176 Freq_data_h03:!
+11177!
+11178    DATA .01,2.399999999
+11179    DATA 2.3,6.999999999
+11180    DATA 6.9,13.499999999
+11181    DATA 13.35,17.99999999
+11182    DATA  18.0,20
+11183    DATA -99
+11184!
+11185 Store_labels:!
+11186    Margin=.25
+11187    Temp_drift=1
+11188 !
+11189    SELECT 1
+11190    CASE FNDut_has("H02",Opt$)
+11191       RESTORE Cond_list_h02
+11192    CASE FNDut_has("H19",Opt$)
+11193       RESTORE Cond_list_h19
+11194    CASE NOT FNDut_has("ATTEN",Opt$)
+11195       RESTORE Cond_list_h03
+11196    CASE FNDut_has("GOOD HARMON",Opt$)
+11197       RESTORE Cond_list_003
+11198    CASE ELSE
+11199       RESTORE Cond_list_std
+11200    END SELECT
+11201    LOOP
+11202       READ Cond$
+11203    EXIT IF Cond$="end"
+11204       Num_conds=Num_conds+1
+11205       Condition$(Num_conds)=Cond$
+11206       FOR J=1 TO Num_bands
+11207          READ Cust_spec
+11208          GOSUB Calc_spec
+11209          Spec(Num_conds,J)=Test_spec
+11210       NEXT J
+11211    END LOOP
+11212    SUBEXIT
+11213   !
+11214 Cond_list_h02:  !                       customer spec for each band
+11215   !---------------------------------------------------------------------
+11216    DATA "MANUAL SWEEP; PEAKING ON   ",   10   ,  10  ,  10  ,  10  ,  7
+11217    DATA "MANUAL SWEEP; PEAKING OFF  ",    9   ,   9  ,   9  ,   9  ,  6
+11218    DATA "SNGL SWP(AUTO); DF=100MHz  ",    9   ,   9  ,   9  ,   9  ,  6
+11219    DATA "CONT SWP(AUTO); FULL BAND  ",    8   ,   8  ,   8  ,   8  ,  5
+11220    DATA "SNGL SWP(.5SC); FULL BAND  ",    8   ,   8  ,   8  ,   8  ,  5
+11221    DATA "end"
+11222!
+11223 Cond_list_h19:  !                       customer spec for each band
+11224   !---------------------------------------------------------------------
+11225    DATA "MANUAL SWEEP; PEAKING ON   ",   10   ,  10  ,  10  ,  10  ,  7
+11226    DATA "SNGL SWP(AUTO); FULL BAND  ",    8   ,   8  ,   8  ,   8  ,  5
+11227    DATA "ALT: SNGL(AUTO),IP(-9dBm)  ",    8   ,   8  ,   8  ,   8  ,  5
+11228    DATA "CONT SWP(AUTO); FULL BAND  ",    8   ,   8  ,   8  ,   8  ,  5
+11229    DATA "SNGL SWP(.5SC); FULL BAND  ",    8   ,   8  ,   8  ,   8  ,  5
+11230    DATA "end"
+11231!
+11232 Cond_list_003:  !                       customer spec for each band
+11233   !---------------------------------------------------------------------
+11234    DATA "MANUAL SWEEP; PEAKING ON   ",   10   ,  10  ,  10  ,   7  ,  7
+11235    DATA "SNGL SWP(AUTO); FULL BAND  ",   10   ,  10  ,  10  ,   7  ,  7
+11236    DATA "ALT: SNGL(AUTO),IP(-9dBm)  ",   10   ,  10  ,  10  ,   7  ,  7
+11237    DATA "CONT SWP(AUTO); FULL BAND  ",   10   ,  10  ,  10  ,   7  ,  7
+11238    DATA "SNGL SWP(.5SC); FULL BAND  ",   10   ,  10  ,  10  ,   7  ,  7
+11239    DATA "end"
+11240!
+11241 Cond_list_h03:  !                       customer spec for each band
+11242   !---------------------------------------------------------------------
+11243    DATA "MANUAL SWEEP; PEAKING ON   ",   10   ,  10  ,  10  ,  10  ,  7
+11244    DATA "SNGL SWP(AUTO); FULL BAND  ",   10   ,  10  ,  10  ,  10  ,  7
+11245    DATA "ALT: SNGL(AUTO),IP(-9dBm)  ",   10   ,  10  ,  10  ,  10  ,  7
+11246    DATA "CONT SWP(AUTO); FULL BAND  ",   10   ,  10  ,  10  ,  10  ,  7
+11247    DATA "SNGL SWP(.5SC); FULL BAND  ",   10   ,  10  ,  10  ,  10  ,  7
+11248    DATA "end"
+11249!
+11250 Calc_spec:!---------------------------------
+11251    Uncert=.25!....meas uncertainty
+11252    Margin=.5!.....dB allowance for temperature drift
+11253!
+11254    SELECT Test_mode$
+11255    CASE "CF_","EI_" !...CAL/FINAL, EI  specs
+11256       Test_spec=Cust_spec+Margin+2*Uncert
+11257!
+11258    CASE "FSC","FSV","FSP","FSA"   !.....FIELD SERVICE specs
+11259       Test_spec=Cust_spec
+11260!
+11261    CASE "T00" TO "T54"  !....HEAT TEST specs
+11262       Test_spec=Cust_spec+2*Uncert
+11263!
+11264    CASE "T55"  !......55 deg IS LOOSENED BY 3 dB
+11265       Test_spec=Cust_spec+2*Uncert-3
+11266!
+11267    END SELECT
+11268    RETURN 
+11269 SUBEND

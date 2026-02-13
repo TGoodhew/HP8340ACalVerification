@@ -1,0 +1,1772 @@
+9000  DEF FNTest_file$
+9001     RETURN "Alc_ad"
+9002  FNEND
+9003  !
+9004  !**************************************************
+9005  !*                                                *
+9006  !*  Copyright (C) Hewlett-Packard Co. 1982,1987   *
+9007  !*                                                *
+9008  !**************************************************
+9009  !
+9010  SUB Alcruf(Model$,Ser_no$,Opt$,Jan_mode$,Test_mode$,INTEGER Pass_fail,Depend)
+9011     Alc_test(Model$,Ser_no$,Opt$,Jan_mode$,Test_mode$,Pass_fail,Depend,1)
+9012  SUBEND
+9013  !
+9014  !
+9015  SUB Alc_ad(Model$,Ser_no$,Opt$,Jan_mode$,Test_mode$,INTEGER Pass_fail,Depend)
+9016     Alc_test(Model$,Ser_no$,Opt$,Jan_mode$,Test_mode$,Pass_fail,Depend,0)
+9017  SUBEND
+9018  !
+9019  !
+9020 Alc_test:SUB Alc_test(Model$,Ser_no$,Opt$,Jan_mode$,Test_mode$,INTEGER Pass_fail,Depend,Rough_adjust)
+9021  !
+9022 Alc_ad:  !
+9023 ! *****************************************
+9024 !
+9025 !  A L C   A D J U S T  and  V E R I F Y
+9026 !
+9027 !       part # :  08340-90059
+9028 !
+9029 !             JUNE 21 , 1983
+9030 !
+9031 ! *****************************************
+9032 !
+9033 !  12/05/83  Trashed the old method of adjustment.  MS
+9034 !  12/08/83  Fixed Pass_fail in ROUGH Adjust
+9035 !  01/10/84  Added margin for range errors to FNPwr_mtr ...MS
+9036 !  01/26/84  Hal Ferguson's field mods...
+9037 !  01/31/84  Changed record size of Log_cal data to 17
+9038 !  04/18/84  MANAGERized; Rev A    ms
+9039 !  05/11/84  Changed to Rev B since Rev A was added to wrong CASE
+9040 !            statement in Alc_ad_parms MS
+9041 !  05/17/84  Initialized Unlvl MS
+9042 !  06/25/84  Added abort to adc_verify MS
+9043 !  07/18/84  Changed over to using strings for cal constants MS
+9044 !  10/10/84  Added FNData_tag$ to output prog MS
+9045 !  11/15/84  Moved ADC Stuff to 10 GHz for H02  MS
+9046 !  11/21/84  Moved ALC Stuff to 10 GHz and chgd power for H02 MS
+9047 !  05/03/85  Removed unused call to set up new Log_cal data file MS
+9048 !  05/30/85  Added an error trap (No_data) when there is no Log_cal data MD
+9049 !  10/09/85  Added Zero_lvl_off to set the level offset dac.    MD
+9050 !  11/15/85  Added Idiot check in Re_cal.    MD
+9051 !  11/15/85  Indicates for which station the Cal data is for. MD
+9052 !  11/15/85  Added Re-adjust ability in Test_adc. MD
+9053 !  12/17/85  Rewrites the original Lvl Dac Off Cal Const after test. MD
+9054 !  03/14/86  Modified hookup to allow for field service information. DG
+9055 !  03/18/86  Modified Print_out to reduce graph size, added continue key
+9056 !            after Crt plots, and to terminate the graph if the measured
+9057 !            power is unleveled and beyond max pwr spec.  DG
+9058 !  03/19/86  Added SELECT for Test_mode$ to test menu.  DG
+9059 !  05/15/86  Modified softkeys and added call to Clr_scr before graphics
+9060 !            output for Series 300 compatibility.  DG
+9061 !  08/15/86  Changed power meter ranges in FNPwr_mtr to fix day 1 bug in
+9062 !            Mike Seibel's program.  MD
+9063 !  09/04/86  Fixed bugs in Alc_ad_out and Alc_verify.  Changes to check of
+9064 !            Alc_passed, Hi_pwr(I), and Lo_pwr(I).  DG
+9065 !  11/03/86  Added call to Instr_present for field.  Also trapped out
+9066 !            DUMP command if the printer is the CRT.  DG
+9067 !  12/16/86  Only sweeps up in power for Option 003s.  MD
+9068 !  12/22/86  Changed ADC check to spit out errors greater than .15dB. KH
+9069 !  01/05/87  Changed WINDOW in prep_graph and modified setup for Series
+9070 !            300 compatibility.
+9071 !
+9072 ! *****************************************
+9073     Rev$="B   01.05.87"!       DG
+9074 ! *****************************************
+9075 !
+9076     OPTION BASE 1
+9077     DEG
+9078 !
+9079 !
+9080 ! *****************************************
+9081 !             J A N I T O R
+9082 !      I N I T I A L I Z A T I O N
+9083 ! *****************************************
+9084     COM /Hpib_codes/ @Dut,@Sa,@Sb,@Co,@Pwr,@Dvm,@Fgn,@Rfgn,@Het,@Mod,@Atn
+9085     COM /Hpib_codes/ @Timer,@D13,@D14,@D15,@D16
+9086     COM /Peripherals/ INTEGER Print,Kbd,Crt
+9087     COM /User_data/ U1(*),U2(*),Pwr_sensor(*),U4(*),Log_cal(*)
+9088     OFF TIMEOUT 
+9089     Is_ref_locked("Dut",Junk)
+9090 !
+9091 ! *****************************************
+9092 !        T E S T   P R O G R A M
+9093 !      I N I T I A L I Z A T I O N
+9094 ! *****************************************
+9095     INTEGER Value,Point,Error_num,Wait_time,Full_adjust,Level_off
+9096     INTEGER Alc_passed,Num_of_pts,Num_pwrs(0:1),Band_number,Option_3
+9097     DIM What_it_is$[70],Input$[50],Cal_name$[20]
+9098     DIM Power(200),Spec_line(6,2),Pwr_list(9,0:1)
+9099 !
+9100     Alc_ad_parms(Rev$[1,1],Opt$,Power(*),Spec_line(*),Max_pwr_low,Max_pwr_hi,Low_freq,High_freq,Test_mode$,Num_of_pts)
+9101     ALLOCATE Low_rf_pwr(Num_of_pts),High_rf_pwr(Num_of_pts)
+9102 !
+9103     What_it_is$=FNData_tag$("?")
+9104     Station_num=VAL(What_it_is$[26,27])
+9105     Full_adjust=0
+9106     Option_3=FNDut_has("GOOD HARMON",Opt$)
+9107 !
+9108 !
+9109 Test_menu: !=================================
+9110 !============================================
+9111 !
+9112     SELECT Test_mode$
+9113     CASE "FSV","FSC","FSP"
+9114 !
+9115     CASE ELSE
+9116        IF Jan_mode$<>"MENU" AND NOT Rough_adjust THEN Alc_verify
+9117     END SELECT
+9118 !
+9119     Clr_scr
+9120     ALPHA ON
+9121     SELECT Test_mode$
+9122     CASE "FSV","FSP"
+9123        Instr_present(@Dut,"Device Under Test")
+9124     END SELECT
+9125     OUTPUT @Dut;"SHPS-20DB"
+9126     Time0=TIMEDATE
+9127     PRINT "*************************************************"
+9128     SELECT Test_mode$
+9129     CASE "FSV","FSP","FSC"
+9130        PRINT "A L C   A C C U R A C Y   V E R I F I C A T I O N"
+9131     CASE ELSE
+9132        PRINT "      A L C    A D J U S T    &   V E R I F Y"
+9133     END SELECT
+9134     PRINT "-------------------------------------------------"
+9135     PRINT "     test revision : ";Rev$;"   S/N : ";Ser_no$
+9136     PRINT "*************************************************"
+9137     PRINT 
+9138     Pass_fail=Alc_passed
+9139     SELECT Alc_passed
+9140     CASE 1
+9141        PRINT "select key below :   [DUT PASSED]"
+9142     CASE -1
+9143        PRINT "select key below :   [DUT FAILED]"
+9144     CASE 0
+9145        PRINT "select key below :"
+9146     END SELECT
+9147     PRINT 
+9148     SELECT Test_mode$
+9149     CASE "FSV","FSP","FSC"
+9150        PRINT "  VERIFY  :  Verify ALC Accuracy; HI & LO bands."
+9151        PRINT "  SETUP   :  Display the equipment setup."
+9152        PRINT "  JANITOR :  Return to the Test Menu."
+9153     !
+9154        OFF KEY 
+9155        ON KEY 5 LABEL "VERIFY" GOTO Alc_verify
+9156        ON KEY 7 LABEL "SETUP" GOTO Gsb_hookup
+9157        ON KEY 9 LABEL "JANITOR" GOTO Exit
+9158     CASE ELSE
+9159        SELECT Rough_adjust
+9160        CASE 1
+9161           PRINT "  FULL     :  Adjusts ALC and ADC. No ALC VERIFY"
+9162           PRINT "              is necessary in the rough adjust."
+9163        CASE 0
+9164           PRINT "  FULL     :  Adjusts & Verifies ALC and ADC."
+9165        END SELECT
+9166        PRINT "  VERIFY   :  Verify ALC Accuracy; HI & LO bands."
+9167        PRINT "  ADC STUF :  Adjust & Verify ADC, AM OFFSET Adj."
+9168        PRINT "  SETUP    :  Display equipment setup."
+9169        PRINT "  JANITOR  :  Return to JANITOR."
+9170 !
+9171        OFF KEY 
+9172        ON KEY 0 LABEL "FULL" GOTO Full_adjust
+9173        ON KEY 2 LABEL "VERIFY" GOTO Alc_verify
+9174        ON KEY 4 LABEL "ADC STUF" GOTO Adc_stuff
+9175        ON KEY 6 LABEL "SETUP" GOTO Gsb_hookup
+9176        ON KEY 9 LABEL "JANITOR" GOTO Exit
+9177        IF Alc_passed<>0 THEN ON KEY 6 LABEL "data" GOTO View_data
+9178     END SELECT
+9179     GOSUB Beap
+9180     LOOP
+9181        DISP "    *   *   *   <<  select key  >>   *   *   * "
+9182        WAIT .2
+9183        DISP "    *   *   *   <<              >>   *   *   * "
+9184        WAIT .2
+9185     END LOOP
+9186 !
+9187 Full_adjust: !
+9188     Full_adjust=1
+9189     OFF KEY 
+9190     Level_off=FNRead_cal(@Dut,FNCal_location("LVL DAC OFF"))
+9191     Zero_dac_off
+9192     GOSUB Alc_adjust
+9193     GOSUB Am_offset
+9194     Set_adc(@Dut)
+9195     Test_adc(@Dut,Jan_mode$,Test_mode$)
+9196     IF Rough_adjust THEN 
+9197        Pass_count(Alc_passed)
+9198        GOTO Test_menu
+9199     ELSE
+9200        GOTO Alc_verify
+9201     END IF
+9202 !
+9203 Adc_stuff: !
+9204     Set_adc(@Dut)
+9205     Test_adc(@Dut,Jan_mode$,Test_mode$)
+9206     GOSUB Am_offset
+9207     GOTO Test_menu
+9208 !
+9209 Exit: !
+9210     IF Full_adjust THEN 
+9211        Write_cal(@Dut,FNCal_location("LVL DAC OFF"),Level_off)
+9212     END IF
+9213     Update_image("CHECK ON")
+9214     SUBEXIT
+9215 !
+9216 Gsb_hookup:!
+9217     Clr_scr
+9218     GOSUB Call_hookup
+9219     GOTO Test_menu
+9220 !
+9221 Call_hookup: !
+9222     OFF KEY 
+9223     ALPHA OFF
+9224     Alc_ad_hookup(Test_mode$)
+9225     ON KEY 5 LABEL "ok" GOTO Done_with_hook
+9226     LOOP
+9227     END LOOP
+9228 Done_with_hook:   !
+9229     OFF KEY 0
+9230     GRAPHICS OFF
+9231     ALPHA ON
+9232     RETURN 
+9233 !
+9234 !
+9235 !
+9236 Beap: !
+9237     BEEP 800,.06
+9238     FOR I=1 TO 4
+9239        BEEP 600,.005
+9240        BEEP 650,.04
+9241     NEXT I
+9242     BEEP 600,.005
+9243     BEEP 800,.04
+9244     RETURN 
+9245 !
+9246 !
+9247 Alc_adjust:!====================================================
+9248 !===============================================================
+9249 !
+9250     OFF KEY 
+9251     ON KEY 9 LABEL "ABORT" GOTO Test_menu
+9252     Clr_scr
+9253 !
+9254     Test_freq=High_freq
+9255 !
+9256 !  ...... read list of powers to adjust
+9257     RESTORE Adjust_pwrs
+9258     FOR Band_number=0 TO 1
+9259        READ Num_pwrs(Band_number)
+9260        FOR I=1 TO Num_pwrs(Band_number)
+9261           READ Pwr_list(I,Band_number)
+9262        NEXT I
+9263     NEXT Band_number
+9264     Band_number=1
+9265 Adjust_pwrs:!
+9266     DATA 4,-20,-10,0,10                   !......low band
+9267     DATA 6,-20,-10,0,10,14,18             !......high band
+9268  !
+9269     GOSUB Rear_pnl_check
+9270     GOSUB Cal_data
+9271     GOSUB Adjust_loop
+9272     Update_image("CHECK OFF","LVL DAC GAIN; HI","LVL DAC GAIN; LO")
+9273     RETURN 
+9274 !
+9275 !*******************************************************************
+9276 Init_for_adjust:!***************************************************
+9277 !
+9278 !  INITIALIZE TEST EQUIPMENT for ADJUSTMENT
+9279 !
+9280 !********************************************************************
+9281     OUTPUT @Dut;"IP PL0DB CW";Test_freq;"GZ"
+9282     OUTPUT @Sa;"IP SP0HZ S2 TS RB1KZ VB100KZ CF";Test_freq;"GZ RL4DM LG5DB TS"
+9283     Setup_dvm(@Dvm,"IP,DCV,AUTO,10V,H0,HOLD")
+9284     CLEAR @Pwr
+9285     OUTPUT @Pwr;"9D+V"
+9286     RETURN 
+9287 !
+9288 Adjust_loop:!*********************************
+9289 !*********************************************
+9290 !   ADJUSTMENT LOOP
+9291 !*********************************************
+9292 !
+9293     Done_flag=0
+9294     GOSUB Init_for_adjust
+9295     GOSUB Loop_all
+9296 !
+9297 !  ...SETUP THE GRAPH
+9298     Clr_scr
+9299     OFF KEY 
+9300     ON KEY 9 LABEL "ABORT" GOTO Test_menu
+9301     GINIT
+9302     GRAPHICS ON
+9303     VIEWPORT 15,133,35,95
+9304     FRAME
+9305     WINDOW -22,22,-100,100
+9306     LINE TYPE 4
+9307     FOR P=-1 TO 1 STEP .05
+9308        Y_pos=FNDisp_pos(P)
+9309        MOVE -22,Y_pos
+9310        DRAW 22,Y_pos
+9311     NEXT P
+9312 !
+9313 !  ................ label the Y axis
+9314     Label_line(1)
+9315     Label_line(.1)
+9316     Label_line(0)
+9317     Label_line(-.1)
+9318     Label_line(-1)
+9319     LDIR 90
+9320     MOVE -27,0
+9321     LORG 5
+9322     LABEL "ERROR [dB]"
+9323     LDIR 0
+9324 !
+9325 !
+9326 !  ................ label the X axis
+9327     LORG 6
+9328     FOR Ptr=1 TO Num_pwrs(Band_number)
+9329        P=Pwr_list(Ptr,Band_number)
+9330        Spec=FNCheck_spec(P,Spec_line(*))
+9331        PEN 1
+9332        CLIP P-1.7,P+1.7,-FNDisp_pos(Spec),FNDisp_pos(Spec)
+9333        GRID .1,99,P,0
+9334        PEN -1
+9335        CLIP P-1.2,P+1.2,-100,100
+9336        GRID .1,99,P,0
+9337        PEN 1
+9338        FRAME
+9339        CLIP OFF
+9340        MOVE P,-105
+9341        LABEL VAL$(P)
+9342     NEXT Ptr
+9343     LORG 4
+9344     MOVE 0,-135
+9345     CSIZE 4
+9346     LABEL "ALC LEVEL [dBm]"
+9347 !
+9348     IF Band_number=1 THEN 
+9349        Cal_name$="LVL DAC GAIN; HI"
+9350     ELSE
+9351        Cal_name$="LVL DAC GAIN; LO"
+9352     END IF
+9353     Value=FNRead_cal(@Dut,FNCal_location(Cal_name$))
+9354 !
+9355     WHILE Done_flag=0
+9356        IF Band_number=1 THEN 
+9357           ON KEY 0 LABEL "LOW " GOTO Change_bands
+9358        ELSE
+9359           ON KEY 0 LABEL "HIGH" GOTO Change_bands
+9360        END IF
+9361        ON KEY 7 LABEL "ALL" GOSUB Loop_all
+9362        ON KEY 2 LABEL "HELP" GOTO Whats_happenin
+9363        ON KEY 4 LABEL "DONE" GOSUB Done_adjusting
+9364        ON KEY 8 LABEL "HI PWR" GOSUB Loop_high
+9365        ON KEY 6 LABEL "LOW PWR" GOSUB Loop_low
+9366 !
+9367        ON KNOB .1 GOSUB Knob_routine
+9368        LORG 5
+9369        LINE TYPE 1
+9370        CSIZE 4
+9371        Pwr_ptr=1
+9372        Inc=1
+9373        LOOP
+9374           IF Pwr_enable(Pwr_ptr) THEN 
+9375              Pwr=Pwr_list(Pwr_ptr,Band_number)
+9376              OUTPUT @Dut;"SHPS";Pwr;"DB"
+9377              IF NOT (Looping) THEN WAIT (80-Pwr*4)/500+.1
+9378              Volts=FNRead_dvm(@Dvm)
+9379              Meas_pwr=FNVolt_to_pwr(Volts)
+9380              IF Pwr_list(Pwr_ptr,Band_number)=0 THEN Offset=Meas_pwr
+9381              MOVE Pwr,FNDisp_pos(Last_star(Pwr_ptr))
+9382              PEN -1
+9383              CSIZE 6
+9384              LABEL "*"
+9385              MOVE Pwr,110
+9386              CSIZE 4
+9387              LABEL USING "SD.DD";Last_star(Pwr_ptr)
+9388              PEN 1
+9389              Pwr_err=Meas_pwr-Pwr-Offset
+9390              IF Pwr_err>1 THEN Pwr_err=1
+9391              IF Pwr_err<-1 THEN Pwr_err=-1
+9392              Star=FNDisp_pos(Pwr_err)
+9393              MOVE Pwr,Star
+9394              CSIZE 6
+9395              LABEL "*"
+9396              MOVE Pwr,110
+9397              CSIZE 4
+9398              LABEL USING "SD.DD";Pwr_err
+9399              Last_star(Pwr_ptr)=Pwr_err
+9400           END IF
+9401           IF Band_number THEN 
+9402              DISP USING "K,3D,K";"9826 KNOB adjusts LVL DAC GAIN;HI [#47]---<<"&VAL$(Value)&">>"
+9403           ELSE
+9404              DISP USING "K,3D,K";"9826 KNOB adjusts LVL DAC GAIN;LO [#46]---<<"&VAL$(Value)&">>"
+9405           END IF
+9406           Pwr_ptr=Pwr_ptr+Inc
+9407        EXIT IF Pwr_ptr>Num_pwrs(Band_number) AND Option_3
+9408           IF Pwr_ptr>Num_pwrs(Band_number) THEN 
+9409              Inc=-1
+9410              Pwr_ptr=Num_pwrs(Band_number)
+9411           END IF
+9412        EXIT IF (Inc=-1 AND Pwr_ptr=0) OR Done_flag
+9413        END LOOP
+9414     END WHILE
+9415     RETURN 
+9416 !
+9417 Whats_happenin:!
+9418     OFF KNOB
+9419     OUTPUT 2 USING "#,K";CHR$(255)&"K"!....a real CLR SCR
+9420     ALPHA ON
+9421     GRAPHICS OFF
+9422     OFF KEY 
+9423     ON KEY 9 LABEL "ABORT" RECOVER Test_menu
+9424     ON KEY 5 LABEL "DONE" GOTO Adjust_loop
+9425     PRINT "**************************************************"
+9426     PRINT "          ALC ADJUSTMENTS ; 'HELP' function"
+9427     PRINT "**************************************************"
+9428     PRINT "The graph just shown is displaying ALC errors at "
+9429     PRINT "various power levels. They are always referenced "
+9430     PRINT "to 0 dBm, so the 0 dBm error will always read '0'."
+9431     PRINT "The following pots can be used to mimize the"
+9432     PRINT "ALC Errors :"
+9433     PRINT 
+9434     PRINT "     high band                     low band"
+9435     PRINT "     ---------                     --------"
+9436     PRINT "     H+20 pot                      L+10 pot"
+9437     PRINT "     H+10 pot                      L-20 pot"
+9438     PRINT "     H-20 pot "
+9439     PRINT 
+9440     PRINT "In addition, 2 cal constants are accessible from "
+9441     PRINT "the 9826 RPG :     LVL DAC GAIN ; HI  [#47]"
+9442     PRINT "             and   LVL DAC GAIN ; LO  [#46]"
+9443     PRINT 
+9444     PRINT "These should also be used to optimize the display-"
+9445     PRINT "ed errors."
+9446     PRINT 
+9447     PRINT "The offset adjustments (LOFS pot and LVL DAC"
+9448     PRINT "OFFSET; INT cal constant) are not adjusted in"
+9449     PRINT "this procedure, since they are set in the Flat-"
+9450     PRINT "ness Adjustment procedure."
+9451     PRINT 
+9452     PRINT "These adjustments are very interactive. An "
+9453     PRINT "understanding of their effects will greatly"
+9454     PRINT "help in adjusting the ALC quickly. Refer to the"
+9455     PRINT "ALC Documentation for some figures showing the"
+9456     PRINT "adjustment interactions."
+9457     PRINT 
+9458     PRINT "Several cryptic keys are available, which are"
+9459     PRINT "explained below :"
+9460     PRINT 
+9461     PRINT "LOW or HIGH  :   this toggles between low band"
+9462     PRINT "       and high band adjustments."
+9463     PRINT "ALL :  this selects a mode that repeatedly loops"
+9464     PRINT "       through all of the powers."
+9465     PRINT "HELP : is this function ."
+9466     PRINT "DONE : is used when the HIGH and LOW bands have"
+9467     PRINT "       been successfully completed."
+9468     PRINT "HI PWR : is an aid that cycles through only the"
+9469     PRINT "       high power points. "
+9470     PRINT "LOW PWR : cycles through only LOW POWERS."
+9471     PRINT "ABORT : this will return to the ALC TEST MENU."
+9472     OUTPUT 2 USING "#,K";CHR$(255)&"T"
+9473     BEEP 800,.1
+9474     DISP "USE KNOB TO VIEW; press 'DONE' when finished"
+9475     LOOP
+9476     END LOOP
+9477 Knob_routine: !
+9478     BEEP 400,.01
+9479     Value=Value-SGN(KNOBX)
+9480     IF Band_number THEN 
+9481        DISP USING "K,3D,K";"9826 KNOB adjusts LVL DAC GAIN;HI [#47]---<<"&VAL$(Value)&">>"
+9482     ELSE
+9483        DISP USING "K,3D,K";"9826 KNOB adjusts LVL DAC GAIN;LO [#46]---<<"&VAL$(Value)&">>"
+9484     END IF
+9485     Write_cal(@Dut,FNCal_location(Cal_name$),Value)
+9486     RETURN 
+9487  !
+9488 Change_bands: !
+9489     Band_number=NOT (Band_number)
+9490     IF Band_number THEN 
+9491        Cal_name$="LVL DAC GAIN; HI"
+9492        Test_freq=High_freq
+9493     ELSE
+9494        Cal_name$="LVL DAC GAIN; LO"
+9495        Test_freq=Low_freq
+9496     END IF
+9497     Value=FNRead_cal(@Dut,FNCal_location(Cal_name$))
+9498     GOTO Adjust_loop
+9499 !
+9500 Loop_all: !
+9501     Looping=0
+9502     FOR I=1 TO Num_pwrs(Band_number)
+9503        Pwr_enable(I)=1
+9504     NEXT I
+9505     RETURN 
+9506 !
+9507 Loop_off: !
+9508     FOR I=1 TO Num_pwrs(Band_number)
+9509        Pwr_enable(I)=0
+9510     NEXT I
+9511     RETURN 
+9512 !
+9513 Loop_high:!
+9514     GOSUB Loop_off
+9515     FOR I=1 TO Num_pwrs(Band_number)
+9516        IF Pwr_list(I,Band_number)>=0 THEN Pwr_enable(I)=1
+9517     NEXT I
+9518     RETURN 
+9519 !
+9520 Loop_low: !
+9521     GOSUB Loop_off
+9522     FOR I=1 TO Num_pwrs(Band_number)
+9523        IF Pwr_list(I,Band_number)<=0 THEN Pwr_enable(I)=1
+9524     NEXT I
+9525     RETURN 
+9526 !
+9527 Done_adjusting:Done_flag=1
+9528     RETURN 
+9529 !
+9530 Rear_pnl_check:!**********************************************
+9531 !*************************************************************
+9532     IF BIT(NUM(Opt$[1,1]),2) THEN 
+9533        PRINT "*************************************************"
+9534        PRINT "   <<<   DUT IS A REAR PANEL OUTPUT   >>>"
+9535        PRINT "*************************************************"
+9536        PRINT 
+9537        PRINT "... make sure that the resistors on the LEVEL"
+9538        PRINT "    CONTROL BOARD have been changed for temp-"
+9539        PRINT "    erature compensation."
+9540        PRINT 
+9541        PRINT "   TO DO THIS :"
+9542        PRINT 
+9543        IF FNDut_has("ATTEN",Opt$) THEN 
+9544           PRINT "        -  replace R70 with a jumper"
+9545           PRINT "        -  remove R71"
+9546        ELSE
+9547           PRINT "        -  change R70 to 1k ohm "
+9548           PRINT "        -  change R71 to 4.64k ohm"
+9549        END IF
+9550        OFF KEY 
+9551        GOSUB Beap
+9552        ON KEY 5 LABEL "OK,FINE" GOTO Reddy
+9553        LOOP
+9554        END LOOP
+9555     END IF
+9556 Reddy:OFF KEY 
+9557     Clr_scr
+9558     RETURN 
+9559 !
+9560 !
+9561 !
+9562 !*********************************************
+9563 !  CHECK FOR CALIBRATION DATA IN MEMORY
+9564 !*********************************************
+9565 Cal_data:!
+9566     DISP "Checking for LOG/LINEARITY calibration data...."
+9567     IF Log_cal(0,1)<>45165 OR Log_cal(0,2)<>Station_num THEN 
+9568        Asgn_cal_factor(@Path,"LOG_CAL_"&VAL$(Station_num),Error_num)
+9569        SELECT Error_num
+9570        CASE 0
+9571           ON ERROR GOSUB No_data
+9572           ENTER @Path;Log_cal(*)
+9573           OFF ERROR 
+9574           ASSIGN @Path TO *
+9575        CASE 56 !....No file found
+9576           GOSUB Calibrate
+9577           GOSUB Store_cal
+9578        END SELECT
+9579     END IF
+9580 !
+9581 Cal_data_menu: !
+9582     Clr_scr
+9583     PRINT "8566 LOG LINEARITY CALIBRATION DATA"
+9584     PRINT "FOR STATION "&VAL$(Station_num)&" HAS BEEN LOADED."
+9585     PRINT 
+9586     PRINT "recal  :  Recalibrate 8566 and store the data"
+9587     PRINT "GO ON  :  Use the calibration data in memory"
+9588     PRINT "view   :  Display the 8566 calibration data"
+9589     DISP "------------------ select a key -----------------"
+9590     GOSUB Beap
+9591     OFF KEY 
+9592     ON KEY 0 LABEL "recal" GOTO Re_cal
+9593     ON KEY 2 LABEL "GO ON" GOTO Cal_return
+9594     ON KEY 4 LABEL "view" GOTO View_cal_data
+9595     ON KEY 9 LABEL "ABORT" RECOVER Test_menu
+9596     LOOP
+9597     END LOOP
+9598 No_data:!
+9599     OFF ERROR 
+9600     GOSUB Calibrate
+9601     GOSUB Store_cal
+9602     Asgn_cal_factor(@Path,"LOG_CAL_"&VAL$(Station_num),Error_num)
+9603     RETURN 
+9604    !
+9605 Re_cal:   !
+9606     OFF KEY 
+9607     Clr_scr
+9608     ON KEY 9 LABEL "ABORT" RECOVER Test_menu
+9609     BEEP 
+9610     Show_message("Are you sure you want to Re Cal ?!?")
+9611     Show_message("  ")
+9612     Show_message("You must use an instrument with a one-ball SYTM.")
+9613     IF NOT FNYes("Select key") THEN GOTO Cal_return
+9614     GOSUB Init_for_adjust
+9615     GOSUB Calibrate
+9616     GOSUB Store_cal
+9617     GOTO Cal_data_menu
+9618 !
+9619 Cal_return:!
+9620     RETURN 
+9621 !
+9622 View_cal_data:!***********************************************
+9623 !               this will graph the log/lin data
+9624 !*************************************************************
+9625     GINIT
+9626     GCLEAR
+9627     ALPHA OFF
+9628     VIEWPORT 10,133,0,10
+9629     WINDOW 0,100,0,100
+9630     MOVE 50,0
+9631     LORG 4
+9632     LABEL "POWER LEVEL  10 dB/DIV"
+9633     LDIR 90
+9634     VIEWPORT 0,10,10,100
+9635     WINDOW 0,100,0,100
+9636     MOVE 100,50
+9637     LABEL "8566 LOG ERROR .2 dB/DIV"
+9638     LDIR 0
+9639     VIEWPORT 10,133,10,100
+9640     WINDOW -30,25,-1,1
+9641     Ptr=1
+9642     GRAPHICS ON
+9643     LINE TYPE 4
+9644     GRID 5,.2
+9645     LINE TYPE 1
+9646     LOOP
+9647     EXIT IF Log_cal(Ptr,1)=0
+9648        Ptr=Ptr+1
+9649     END LOOP
+9650     FOR I=Ptr-1 TO 1 STEP -1
+9651        IF I=Ptr-1 THEN 
+9652           MOVE Log_cal(I,2),0
+9653           P_origin=Log_cal(I,2)
+9654           V_origin=Log_cal(I,1)
+9655        ELSE
+9656           P_err=(Log_cal(I,1)-V_origin)*50-(Log_cal(I,2)-P_origin)
+9657           DRAW Log_cal(I,2),P_err
+9658        END IF
+9659     NEXT I
+9660     GOSUB Beap
+9661     PAUSE
+9662     GRAPHICS OFF
+9663     ALPHA ON
+9664     GOTO Cal_data_menu
+9665    !
+9666    !
+9667 Calibrate:!***********************************
+9668 !*********************************************
+9669 !
+9670 !  Measure 8566 log linearity
+9671 !
+9672 !*********************************************
+9673     FOR I=0 TO 255
+9674        Log_cal(I,1)=0
+9675        Log_cal(I,2)=0
+9676     NEXT I
+9677     GOSUB Init_for_adjust
+9678     OUTPUT @Dut;"RF0"
+9679     Zero_pwr_mtr(@Pwr,60)
+9680     OUTPUT @Dut;"RF1"
+9681     Ptr=1
+9682     IF FNDut_has("ATTEN",Opt$) THEN 
+9683        Low_limit=-26
+9684     ELSE
+9685        Low_limit=-20
+9686     END IF
+9687     FOR Pwr=Low_limit TO 20 STEP 1
+9688        DISP "Measuring 8566 log linearity...."
+9689        OUTPUT @Dut;"PL";Pwr;"DB"
+9690        WAIT .2
+9691        Pwr_reading=FNPwr_mtr(@Pwr)
+9692        Voltage=FNRead_dvm(@Dvm,4)
+9693        Log_cal(Ptr,2)=Pwr_reading
+9694        Log_cal(Ptr,1)=Voltage
+9695        Ptr=Ptr+1
+9696     NEXT Pwr
+9697     Log_cal(0,1)=45165!...code number for ID purposes
+9698     Log_cal(0,2)=Station_num
+9699     RETURN 
+9700 !
+9701 Store_cal:!****************************************
+9702 !**************************************************
+9703     REPEAT
+9704        Asgn_cal_factor(@Path,"LOG_CAL_"&VAL$(Station_num),Error_num)
+9705        SELECT Error_num
+9706        CASE 0
+9707           OUTPUT @Path;Log_cal(*)
+9708           ASSIGN @Path TO *
+9709        CASE 56
+9710           Show_message("THIS STATION HAS NO ALC CAL DATA FILE CREATED !!",4)
+9711           Show_message("----- call your local PRODUCTION ENGINEER",5)
+9712           STOP
+9713        END SELECT
+9714     UNTIL Error_num=0
+9715     RETURN 
+9716 !
+9717 Am_offset: !================================
+9718 !===========================================
+9719 !
+9720 ! This subroutine adjusts the AM OFFSET cal
+9721 ! constant [cal # 43].
+9722 !
+9723 !===========================================
+9724 !===========================================
+9725     Clr_scr
+9726     DISP "ADJUSTING AM OFFSET........"
+9727     OUTPUT @Dut;"CW4.5GZ PL0DB AM0"
+9728     WAIT .5
+9729     Target=FNPwr_mtr(@Pwr)
+9730     OUTPUT @Dut;"AM1"
+9731     LOOP
+9732        Reading=FNPwr_mtr(@Pwr)
+9733        Err=(Reading-Target)/.05
+9734        Err=INT(Err)+INT((Err-INT(Err))*2)
+9735     EXIT IF ABS(Err)<.6
+9736        Value=FNRead_cal(@Dut,FNCal_location("AM OFFSET"))
+9737        Write_cal(@Dut,FNCal_location("AM OFFSET"),Value-INT(Err))
+9738     END LOOP
+9739     Update_image("CHECK OFF","AM OFFSET")
+9740     RETURN 
+9741 !
+9742 Test_aborted: !
+9743     IF Alc_passed<>-1 THEN  ! If the test has not failed , then set
+9744        Alc_passed=0         ! alc_passed to 0 (i.e., Aborted).
+9745     END IF
+9746     GOTO View_data
+9747 !
+9748 Alc_verify: !==============================
+9749 !==========================================
+9750 !
+9751     Clr_scr
+9752     SELECT Test_mode$
+9753     CASE "FSP","FSV","FSC"
+9754        OFF KEY 
+9755        Instr_present(@Dut,"Device Under Test")
+9756        Instr_present(@Pwr,"Power Meter")
+9757        Clr_scr
+9758     END SELECT
+9759     Alc_passed=1
+9760     OUTPUT @Pwr;"9D+V"
+9761     OUTPUT @Dut;"IP PL0DB CW4.5GZ RP1"
+9762     PRINT "================================================="
+9763     PRINT "--------------  ALC VERIFICATION : -------------"
+9764     PRINT "================================================="
+9765     OFF KEY 
+9766     ON KEY 9 LABEL "ABORT" RECOVER Test_aborted
+9767     OUTPUT @Dut;"SHPS0DB"
+9768     Time0=TIMEDATE
+9769 !
+9770     FOR Band=1 TO 2
+9771        SELECT Band
+9772        CASE <1.5
+9773           OUTPUT @Dut;"CW";Low_freq;"GZ"
+9774           Max_pwr=Max_pwr_low
+9775           Band$="Low Band"
+9776        CASE >1.5
+9777           OUTPUT @Dut;"CW";High_freq;"GZ"
+9778           Max_pwr=Max_pwr_hi
+9779           Band$="High Band"
+9780        END SELECT
+9781        Wait_time=INT(60-(TIMEDATE-Time0))
+9782        IF Wait_time<15 THEN Wait_time=15
+9783        OUTPUT @Dut;"RF0"
+9784        Zero_pwr_mtr(@Pwr,Wait_time)
+9785        OUTPUT @Dut;"RF1"
+9786 !
+9787 !------------set reference at 0 dBm---------
+9788        OUTPUT @Dut;"SHPS0DB"
+9789        Junk=FNPwr_mtr(@Pwr)
+9790        WAIT .2
+9791        Zero=FNPwr_mtr(@Pwr)
+9792 !
+9793 !-------------------------------------------
+9794        FOR Point=1 TO Num_of_pts
+9795           OUTPUT @Dut;"SHPS";Power(Point);"DB"
+9796 !
+9797 !-----------check for unleveled DUT---------
+9798 !  ...add 200 to data if unleveled
+9799 !
+9800           WAIT .2
+9801           Unlvl=0
+9802           IF FNUnleveled(@Dut) THEN 
+9803              Unlvl=200
+9804              IF Power(Point)<=Max_pwr THEN Alc_passed=-1
+9805           END IF
+9806           DISP "Measuring ALC accuracy at ";Power(Point);"dBm"
+9807           Measure=FNPwr_mtr(@Pwr)-Zero
+9808           SELECT Band
+9809           CASE <1.5
+9810              IF Power(Point)>Max_pwr_low THEN Unlvl=200
+9811              Low_rf_pwr(Point)=Measure+Unlvl
+9812           CASE >1.5
+9813              IF Power(Point)>Max_pwr_hi THEN Unlvl=200
+9814              High_rf_pwr(Point)=Measure+Unlvl
+9815           END SELECT
+9816           GOSUB Check_speck!....look @ 'Measure'
+9817        NEXT Point
+9818        Time0=TIMEDATE
+9819        OUTPUT @Dut;"SHPS-20DB"
+9820        IF Alc_passed=1 THEN 
+9821           PRINT "------ "&Band$&" PASSED"
+9822        ELSE
+9823           PRINT "------ "&Band$&" FAILED"
+9824        END IF
+9825     NEXT Band
+9826 !
+9827     SELECT Alc_passed
+9828     CASE 1
+9829        Pass_count(Pass_fail)
+9830     CASE -1
+9831        Fail_count(Pass_fail)
+9832     END SELECT
+9833 !
+9834 !
+9835 Store_data: !================================
+9836 !============================================
+9837 !
+9838     Clr_scr
+9839     DISP "************* STORING DATA *********************"
+9840     Prep_data_file(@Dat,Model$,Test_mode$,"Alc_ad",Ser_no$,6)
+9841     OUTPUT @Dat;FNData_tag$(Rev$[1,1]),Opt$,High_freq,High_rf_pwr(*),Low_freq,Low_rf_pwr(*)
+9842     ASSIGN @Dat TO *
+9843     DISP 
+9844 !
+9845 View_data: !================================
+9846 !===========================================
+9847     Header$=Rev$[1,1]&Opt$
+9848 !
+9849 !
+9850     IF Test_mode$="EI_" OR Test_mode$[1,1]="T" AND Jan_mode$<>"MENU" THEN 
+9851        Alc_ad_out(Model$,Ser_no$,Test_mode$,"PRINT",Error$)
+9852        Pass_fail=Alc_passed
+9853        CALL Test_adc(@Dut,Jan_mode$,Test_mode$)
+9854        SUBEXIT
+9855     END IF
+9856 !
+9857 !
+9858 Output_menu:  !==============================
+9859 !===========================================
+9860     Clr_scr
+9861     PRINT "     ALC VERIFICATION:   OUTPUT MENU"
+9862     PRINT "     ----------------"
+9863     PRINT USING "3/"
+9864     IF Alc_passed=1 THEN PRINT "   S/N : ";Ser_no$;"     PASSED !!!"
+9865     IF Alc_passed=-1 THEN PRINT "   S/N : ";Ser_no$;"     FAILED !!!"
+9866     IF Alc_passed=0 THEN PRINT "   S/N : ";Ser_no$;"    ABORTED !!!"
+9867     PRINT USING "3/"
+9868     PRINT "              select key below"
+9869     OFF KEY 
+9870     ON KEY 5 LABEL "Print" GOTO Hard_copy
+9871     ON KEY 7 LABEL "Display" GOTO Soft_copy
+9872     ON KEY 9 LABEL "DONE" GOTO Test_menu
+9873     GOSUB Beap
+9874     LOOP
+9875     END LOOP
+9876 !
+9877 Hard_copy:Data_dest$="PRINT"
+9878     GOTO Call_out
+9879 !
+9880 Soft_copy:Data_dest$="DISPLAY"
+9881 !
+9882 !
+9883 Call_out: !
+9884     OFF KEY 
+9885     Alc_ad_out(Model$,Ser_no$,Test_mode$,Data_dest$,Error$,Header$,High_rf_pwr(*),Low_rf_pwr(*))
+9886     DISP 
+9887     GOTO Output_menu
+9888 !
+9889 !
+9890 !
+9891 Check_speck: !==============================
+9892 !==========================================
+9893 !
+9894 !   This subroutine checks the value of
+9895 ! 'Measure' against the ALC spec for this
+9896 ! power level.
+9897 !
+9898 !==========================================
+9899 !==========================================
+9900     IF Unlvl>50 THEN RETURN 
+9901 !
+9902     Spec=FNCheck_spec(Power(Point),Spec_line(*))
+9903     IF ABS(Measure-Power(Point))>Spec THEN Alc_passed=-1
+9904     RETURN 
+9905  SUBEND
+9906 !
+9907 !
+9908 Fnpwr_mtr:DEF FNPwr_mtr(@Pwr)
+9909 !
+9910     Range_error=.1!..... dB 436 range-to-range error
+9911     Range=0
+9912     LOOP
+9913        OUTPUT @Pwr;"9D+V"
+9914        FOR Settle=1 TO 20
+9915           WAIT (Range=73)*4
+9916           ENTER @Pwr USING "X,B,X,5D,X,3D";Range,Power,Expon
+9917           Pwr=Power*10^(Expon)
+9918           SELECT Pwr+Range_error
+9919           CASE <-19.21
+9920              Rng=73
+9921           CASE <-9.21
+9922              Rng=74
+9923           CASE <.79
+9924              Rng=75
+9925           CASE <10.79
+9926              Rng=76
+9927           CASE ELSE
+9928              Rng=77
+9929           END SELECT
+9930           IF Range<>Rng THEN 
+9931              OUTPUT @Pwr;CHR$(Rng-24)
+9932              GOTO Lupe
+9933           END IF
+9934           IF Settle<2 THEN Lupe
+9935           IF Range>74 AND Settle<7 THEN Lupe
+9936           IF ABS(Power-Old_power)>1 THEN Lupe
+9937           OUTPUT @Pwr;"9D+V"
+9938           RETURN Pwr
+9939 Lupe:     Old_power=Power
+9940        NEXT Settle
+9941        DISP "POWER METER NOT SETTLED !!!!!!"
+9942        BEEP 1000,2
+9943        PAUSE
+9944     END LOOP
+9945  FNEND
+9946 !
+9947 !*******************************************
+9948 !*******************************************
+9949 !*******************************************
+9950 !
+9951 Alc_ad_out:SUB Alc_ad_out(Model$,Ser$,Test_mode$,Data_dest$,Error$,OPTIONAL Hdr$,H_dat(*),L_dat(*))
+9952 !*******************************************
+9953 !
+9954 !      A L C   V E R I F I C A T I O N
+9955 !
+9956 !     O U T P U T   S U B P R O G R A M
+9957 !
+9958 !    part of # 08340-90059  rev  A
+9959 !
+9960 !*******************************************
+9961     OPTION BASE 1
+9962     COM /Peripherals/ INTEGER Printer,Kbd,Crt
+9963     DIM Rev$[50],Power(85),Spec_line(6,2)
+9964     INTEGER Num_of_pts,File_found
+9965 !
+9966 !
+9967 !-------------------------------------------
+9968 !         FIND DATA TO PRINT OUT
+9969 !-------------------------------------------
+9970     IF NPAR=5 THEN 
+9971        Find_data(@Dat,Model$,Test_mode$,"Alc_ad",Ser$,File_found)
+9972        IF File_found THEN 
+9973           ENTER @Dat;Rev$,Opt$
+9974           SELECT Rev$[1,1]
+9975           CASE "1","2","a","b","c","d","A","B"
+9976              Alc_ad_parms(Rev$[1,1],Opt$,Power(*),Spec_line(*),Max_pwr_low,Max_pwr_hi,Low_f,High_f,Test_mode$,Num_of_pts)
+9977              ALLOCATE H_pwr(Num_of_pts),L_pwr(Num_of_pts)
+9978              ENTER @Dat;High_f,H_pwr(*),Low_f,L_pwr(*)
+9979              ASSIGN @Dat TO *
+9980           CASE ELSE!......cannot handle this revision of data
+9981              Error$=Rev$[1,1]
+9982              SUBEXIT
+9983           END SELECT
+9984        ELSE!...... no file found
+9985           Error$="?"
+9986           SUBEXIT
+9987        END IF
+9988     ELSE
+9989        Rev$=FNData_tag$(Hdr$[1,1])
+9990        Alc_ad_parms(Rev$[1,1],Hdr$[2],Power(*),Spec_line(*),Max_pwr_low,Max_pwr_hi,Low_f,High_f,Test_mode$,Num_of_pts)
+9991        ALLOCATE H_pwr(Num_of_pts),L_pwr(Num_of_pts)
+9992        FOR I=1 TO Num_of_pts
+9993           H_pwr(I)=H_dat(I)
+9994           L_pwr(I)=L_dat(I)
+9995        NEXT I
+9996     END IF
+9997 !
+9998 !-------------------------------------------
+9999 !         PRINT OUT DATA
+10000!-------------------------------------------
+10001 Print_out:!
+10002    IF Data_dest$="PRINT" THEN 
+10003       PRINTER IS Printer
+10004    ELSE
+10005       PRINTER IS Crt
+10006    END IF
+10007    Clr_scr
+10008    Top_of_page
+10009    ALPHA OFF
+10010    GRAPHICS ON
+10011    !
+10012    !
+10013    LORG 5
+10014    FOR Band=1 TO 2
+10015       SELECT Band
+10016       CASE 1
+10017          Freq=High_f
+10018          Max_pwr=Max_pwr_hi
+10019       CASE 2
+10020          Freq=Low_f
+10021          Max_pwr=Max_pwr_low
+10022       END SELECT
+10023       Graph$="PASSED"
+10024       GOSUB Prep_graph
+10025       CLIP -20,20,-.6,.6
+10026       CSIZE 5,.5
+10027       MOVE Power(1),H_pwr(1)-Power(1)
+10028       FOR I=1 TO Num_of_pts
+10029          Unleveled=0
+10030          Spec=FNCheck_spec(Power(I),Spec_line(*))
+10031          SELECT Band
+10032          CASE 1
+10033             IF H_pwr(I)<100 THEN  ! <100 means DUT was Leveled and within
+10034 !                                   the spec'd ALC range.
+10035                GOTO Draw_high_pwr
+10036             ELSE
+10037                IF Power(I)<=Max_pwr THEN 
+10038                   Unleveled=1
+10039                   H_pwr(I)=H_pwr(I)-200 ! Removes 200 added for unleveled
+10040 !                                         condition in spec'd ALC range.
+10041                   GOTO Draw_high_pwr
+10042                END IF
+10043             END IF
+10044 !
+10045 !  Test for leveled condition out of spec'd ALC range
+10046 !
+10047             IF ABS(H_pwr(I)-Power(I)-200)<.6 THEN 
+10048                DRAW Power(I),H_pwr(I)-Power(I)-200
+10049                GOTO Next_point
+10050             ELSE
+10051                GOTO Next_plot
+10052             END IF
+10053  !
+10054 Draw_high_pwr: !
+10055             DRAW Power(I),H_pwr(I)-Power(I)
+10056             IF Unleveled=1 THEN 
+10057                LABEL "*"
+10058                MOVE Power(I),H_pwr(I)-Power(I)
+10059                Graph$="FAILED"
+10060             ELSE
+10061                IF ABS(H_pwr(I)-Power(I))>Spec AND Power(I)<=Max_pwr THEN 
+10062                   LABEL "O"
+10063                   MOVE Power(I),H_pwr(I)-Power(I)
+10064                   Graph$="FAILED"
+10065                END IF
+10066             END IF
+10067          CASE 2
+10068             IF L_pwr(I)<100 THEN  !  <100 means DUT was Leveled and
+10069 !                                    within the spec'd ALC range
+10070                GOTO Draw_low_pwr
+10071             ELSE
+10072                IF Power(I)<=Max_pwr THEN 
+10073                   Unleveled=1
+10074                   L_pwr(I)=L_pwr(I)-200 ! Removes 200 added for unleveled
+10075 !                                         condition in spec'd ALC range.
+10076                   GOTO Draw_low_pwr
+10077                END IF
+10078             END IF
+10079 !
+10080 ! Test for leveled condition out of spec'd ALC range.
+10081 !
+10082             IF ABS(L_pwr(I)-Power(I)-200)<.6 THEN 
+10083                DRAW Power(I),L_pwr(I)-Power(I)-200
+10084                GOTO Next_point
+10085             ELSE
+10086                GOTO Next_plot
+10087             END IF
+10088 !
+10089 Draw_low_pwr:!
+10090             DRAW Power(I),L_pwr(I)-Power(I)
+10091             IF Unleveled=1 THEN 
+10092                LABEL "*"
+10093                MOVE Power(I),L_pwr(I)-Power(I)
+10094                Graph$="FAILED"
+10095             ELSE
+10096                IF ABS(L_pwr(I)-Power(I))>Spec AND Power(I)<=Max_pwr THEN 
+10097                   LABEL "O"
+10098                   MOVE Power(I),L_pwr(I)-Power(I)
+10099                   Graph$="FAILED"
+10100                END IF
+10101             END IF
+10102          END SELECT
+10103 Next_point:NEXT I
+10104 Next_plot:      !
+10105       CLIP -10,10,-.5,-.4
+10106       PEN -1
+10107       GRID 5,.01,0,-.45
+10108       PEN 1
+10109       CLIP -10,0,-.5,-.4
+10110       CSIZE 7,.4
+10111       LORG 5
+10112       MOVE -5,-.45
+10113       LABEL "S/N: "&Ser$
+10114       CLIP 0,10,-.5,-.4
+10115       PEN 1
+10116       GRID 5,.002,5,-.45
+10117       MOVE 5,-.45
+10118       PEN -1
+10119       CSIZE 7
+10120       LABEL Graph$
+10121       CLIP OFF
+10122       PEN 1
+10123       CSIZE 5,.5
+10124       MOVE 1,-.55
+10125       LABEL "O = Out of Spec    * = Unleveled"
+10126       PEN 1
+10127       CLIP -10,10,-.5,-.4
+10128       FRAME
+10129       IF Data_dest$="PRINT" THEN 
+10130          OFF KEY 
+10131          IF Printer<>1 THEN DUMP GRAPHICS
+10132       ELSE
+10133          ON KEY 5 LABEL "NEXT" GOTO Continue
+10134          LOOP
+10135          END LOOP
+10136 Continue:   !
+10137       END IF
+10138    NEXT Band
+10139    !
+10140    ALPHA ON
+10141    GRAPHICS OFF
+10142    PRINTER IS Crt
+10143    SUBEXIT
+10144    !
+10145 Prep_graph:    !
+10146    GINIT
+10147    GRAPHICS ON
+10148    VIEWPORT 2,120,10,95
+10149    WINDOW -25,21,-.75,.6
+10150    !
+10151    CSIZE 3.5
+10152    LORG 6
+10153    FOR I=-20 TO 20 STEP 5
+10154       MOVE I,-.6
+10155       LABEL I
+10156    NEXT I
+10157    LORG 8
+10158    FOR I=-.5 TO .5 STEP .5
+10159       MOVE -20.4,I
+10160       LABEL I
+10161    NEXT I
+10162    DEG
+10163    CSIZE 4
+10164    LORG 4
+10165    LDIR 90
+10166    MOVE -23,0
+10167    LABEL "ALC ERROR [dB]"
+10168    LDIR 0
+10169    MOVE 0,-.75
+10170    LABEL "ALC POWER LEVEL [dBm]"
+10171    !
+10172    !
+10173    LINE TYPE 3
+10174    CLIP -20,20,-.6,.6
+10175    GRID 5,.1,0,0
+10176    LINE TYPE 1
+10177    FRAME
+10178    !
+10179    !
+10180    CLIP -15,15,.4,.6
+10181    PEN -1
+10182    GRID 5,.01,0,.5
+10183    PEN 1
+10184    FRAME
+10185    MOVE 0,.5
+10186    CSIZE 5,.4
+10187    SELECT Test_mode$
+10188    CASE "EI_"
+10189       LABEL USING "K,DD.D,K";"EI ALC ACCURACY  at ",Freq," GHz"
+10190    CASE ELSE
+10191       LABEL USING "K,DD.D,K";"ALC ACCURACY RESULTS at ",Freq," GHz"
+10192    END SELECT
+10193    LABEL "rev : "&Rev$
+10194    CLIP OFF
+10195    !
+10196    !
+10197    LINE TYPE 8
+10198    FOR J=-1 TO 1 STEP 2
+10199       MOVE Spec_line(1,1),J*Spec_line(1,2)
+10200       FOR I=1 TO 6
+10201          IF Spec_line(I,1)<Max_pwr THEN 
+10202             DRAW Spec_line(I,1),J*Spec_line(I,2)
+10203          ELSE
+10204             DRAW Max_pwr,J*Spec_line(I,2)  !...Added to open up H02
+10205             GOTO Next_j
+10206          END IF                            !...spec lines past -10dBm.
+10207                                            !...Changed so it now plots
+10208                                            !...spec lines to Max Power
+10209                                            !...for all instruments.
+10210       NEXT I
+10211 Next_j:   !
+10212    NEXT J
+10213    LDIR 0
+10214    LINE TYPE 1
+10215    LORG 5
+10216    RETURN 
+10217 SUBEND
+10218!
+10219!
+10220!
+10221 Alc_ad_parms:!=================================
+10222!===========================================
+10223!
+10224! All test parameters and specs stored here
+10225!
+10226!===========================================
+10227!===========================================
+10228 SUB Alc_ad_parms(Rev$,Opt$,Power(*),Spec_line(*),Max_p_lo,Max_p_hi,Low_freq,High_freq,Test_mode$,INTEGER Pts)
+10229!
+10230!
+10231!....... list the powers measured
+10232    SELECT Rev$
+10233    CASE "1","2","a","b","c","A"!------------
+10234       Pts=9
+10235       Ptr=1
+10236       FOR P=-20 TO 20 STEP 5
+10237          Power(Ptr)=P
+10238          Ptr=Ptr+1
+10239       NEXT P
+10240    CASE "d","B"!----------------------------
+10241       Pts=41
+10242       Ptr=1
+10243       FOR P=-20 TO 20
+10244          Power(Ptr)=P
+10245          Ptr=Ptr+1
+10246       NEXT P
+10247    END SELECT
+10248!
+10249!
+10250!......test frequencies/powers
+10251    IF FNDut_has("GOOD HARMON",Opt$) THEN 
+10252       High_freq=10
+10253       Max_p_hi=FNMax_pwr(@Dut,High_freq,Opt$)
+10254    ELSE
+10255       High_freq=4.5
+10256       Max_p_hi=18
+10257    END IF
+10258    Low_freq=1.5
+10259    Max_p_lo=FNMax_pwr(@Dut,Low_freq,Opt$)
+10260!
+10261!
+10262!......specification lines
+10263    SELECT Test_mode$
+10264    CASE "CF_"!....CAL/FINAL
+10265       RESTORE Spec1
+10266    CASE "EI_" !....EI
+10267       RESTORE Spec2
+10268    CASE ELSE  !....SERVICE
+10269       RESTORE Spec3
+10270    END SELECT
+10271    FOR I=1 TO 6
+10272       READ Spec_line(I,1),Spec_line(I,2)
+10273    NEXT I
+10274 Spec1:DATA  -20,.2,-15,.15,-10,.1,10,.1,15,.2,18,.2
+10275 Spec2:DATA  -20,.4,-15,.3,-10,.2,10,.2,15,.3,18,.3
+10276 Spec3:DATA  -20,.5,-15,.4,-10,.2,10,.2,15,.4,18,.4
+10277!
+10278!
+10279 SUBEND
+10280!
+10281!
+10282!
+10283 Check_spec:!===============================
+10284!==========================================
+10285!
+10286!  This FUNCTION returns the spec for a
+10287!  given power and Spec_line(*) array.
+10288!
+10289!==========================================
+10290!==========================================
+10291 DEF FNCheck_spec(Power,Spec_line(*))
+10292    FOR I=1 TO 6
+10293       IF Power<=Spec_line(I,1) THEN Found_it
+10294    NEXT I
+10295 Found_it: !    I=upper BOUNDARY
+10296    IF I=1 THEN RETURN Spec_line(1,2)
+10297    IF I=7 THEN RETURN 999!....beyond spec
+10298    Frac=(Power-Spec_line(I-1,1))/(Spec_line(I,1)-Spec_line(I-1,1))
+10299    Spec=Frac*(Spec_line(I,2)-Spec_line(I-1,2))+Spec_line(I-1,2)
+10300    RETURN Spec
+10301 FNEND
+10302!
+10303 Disp_pos:DEF FNDisp_pos(Power)
+10304 !
+10305  !*****************************************************
+10306  !...This determines the expanded display postions
+10307  !*****************************************************
+10308    IF Power>25 THEN RETURN 100
+10309    IF Power<-25 THEN RETURN 0
+10310    RETURN SGN(Power)*100.09*(1-EXP(-ABS(Power*7)))
+10311 FNEND
+10312  !
+10313  !
+10314 SUB Label_line(Power)
+10315  !*****************************************************
+10316  !  This draws a line and labels it on the ADJUST graph
+10317  !*****************************************************
+10318    CLIP OFF
+10319    LINE TYPE 1
+10320    LORG 8
+10321    Y_pos=FNDisp_pos(Power)
+10322    MOVE -22,Y_pos
+10323    DRAW 22,Y_pos
+10324    MOVE -22.2,Y_pos
+10325    LABEL VAL$(Power)
+10326 SUBEND
+10327 !
+10328 Volt_to_pwr:DEF FNVolt_to_pwr(Voltage)
+10329 !************************************************************
+10330 !  This examines the log_cal data and interpolates to find
+10331 !  the actual power that the 8566 is measuring based on the
+10332 !  value of the passed 'Voltage'.
+10333 !************************************************************
+10334    COM /User_data/ U1(*),U2(*),U3(*),U4(*),Log_cal(*)
+10335    Lo_guess=1
+10336    Hi_guess=256
+10337    LOOP
+10338       SELECT Hi_guess-Lo_guess
+10339       CASE 1
+10340          Delta_p=Log_cal(Hi_guess,2)-Log_cal(Lo_guess,2)
+10341          Delta_v=Log_cal(Hi_guess,1)-Log_cal(Lo_guess,1)
+10342          Meas_del=Voltage-Log_cal(Lo_guess,1)
+10343          RETURN Delta_p/Delta_v*Meas_del+Log_cal(Lo_guess,2)
+10344       CASE ELSE
+10345          Guess=INT((Hi_guess+Lo_guess)/2)
+10346          IF Log_cal(Guess,1)>Voltage OR Log_cal(Guess,1)=0 THEN 
+10347             Hi_guess=Guess
+10348          ELSE
+10349             Lo_guess=Guess
+10350          END IF
+10351       END SELECT
+10352    END LOOP
+10353 FNEND
+10354!*********************************************
+10355!*********************************************
+10356 Alc_ad_hookup:SUB Alc_ad_hookup(Test_mode$)
+10357    GINIT
+10358    ALPHA OFF
+10359    GRAPHICS ON
+10360    VIEWPORT 0,120,10,95
+10361    WINDOW 0,135,0,100
+10362    SELECT Test_mode$
+10363    CASE "FSP","FSV","FSC"
+10364       Label("ALC VERIFICATION TEST SETUP",65,90,7,.6,0)
+10365       Box(56,21,7,17)
+10366       Label("HP 436A",107.4,51,4,.6,0)
+10367       Label("DUT",37,62,5,.6,0)
+10368       Label("Power Meter",103,59,5,.6,0)
+10369       Label("PowerSensor",42,24,5,.6,0)
+10370       Connect(56.5,36,56.5,29.8,0)
+10371       Connect(56.5,10,90.6,38.7,-1)
+10372       Connect(56.5,12.7,56.5,10,0)
+10373       Dut(-55,-15,-55,-30)
+10374       Label("RF OUTPUT",45,32,3.5,.6,0)
+10375       F436(55,-30,-40,-23)
+10376    CASE ELSE
+10377       Box(59,40,6,17)
+10378       Box(63,47,3,2)
+10379       Box(59,30,2,3)
+10380       Box(88,72,36,9)
+10381       Label("3455 DVM",87.5,72.25,5,.6,0)
+10382       Label("8566A",109.5,52.25,5,.6,0)
+10383       Label("16 dB COUPLER",38.5,42.5,4,.6,0)
+10384       Label("VIDEOOUTPUT",127.25,70.75,3.75,.6,0)
+10385       F8566(73,-19,-40,-16)
+10386       Connect(59.5,53.25,59.5,48.75,1)
+10387       Connect(120,35.75,71.5,30.75,0)
+10388       Connect(64.5,47.25,71.75,30.75,-1)
+10389       Connect(105.75,72.75,119,61,-1)
+10390       Label("ALC ADJUSTMENT TEST SETUP :",63.25,89,7.5,.6,0)
+10391       Box(59,19,7,17)
+10392       Label("436A",18,29.5,5,.6,0)
+10393       Label("834X  DUT",41,69.25,5,.6,0)
+10394       Label("8485ASENSOR",45.5,20,4,.6,0)
+10395       Connect(3,20,58.75,9.25,0)
+10396       Connect(58.75,10.5,58.75,9.25,1)
+10397       Dut(-49,10,-55,-30)
+10398       F436(-99,-63,-55,-30)
+10399    END SELECT
+10400 SUBEND
+10401!*********************************************
+10402!*********************************************
+10403 F8566:SUB F8566(Xpos,Ypos,Sizex,Sizey)
+10404    GRAPHICS ON
+10405    WINDOW -Xpos+Sizex,135-Xpos-Sizex,-Ypos+Sizey,100-Ypos-Sizey
+10406    Box(56,75,57,17)
+10407    Box(38,75,18,14)
+10408    Box(82,63,1,1)
+10409    Box(82,61,1,1)
+10410    Box(82,55,1,1)
+10411    Box(82,59,1,1)
+10412    Box(82,57,1,1)
+10413    Box(56,57,57,17)
+10414    Box(56,59,57,12)
+10415    Box(31,60,1,1)
+10416    Box(34,60,1,1)
+10417    Box(37,60,1,1)
+10418    Box(40,60,1,1)
+10419    Box(43,60,1,1)
+10420    Box(68,62,4,1)
+10421    Box(68,60,4,1)
+10422    Box(68,56,4,1)
+10423    Box(67,58,1,1)
+10424    Box(69,58,1,1)
+10425    Box(81,80,1,1)
+10426    Box(76,80,1,1)
+10427    Box(58,80,1,1)
+10428    Box(61,80,1,1)
+10429    Box(58,77,1,1)
+10430    Box(61,77,1,1)
+10431    Box(48,62,1,1)
+10432    Box(48,60,1,1)
+10433    Box(48,58,1,1)
+10434    Box(48,56,1,1)
+10435    Box(62,55,1,1)
+10436    Box(58,55,1,1)
+10437    Connect(29.25,70.25,47.25,70.5,0)
+10438    Connect(35.5,70.5,35.5,76.25,0)
+10439    Connect(67.25,50.5,71,46.75,0)
+10440    Connect(70.75,50.5,70.75,47,0)
+10441    Circle(60,60.25,3,0,360)
+10442    Circle(79,50.75,1.5,0,360)
+10443    Circle(51,80,1.25,0,360)
+10444    Circle(78.5,71,.75,0,360)
+10445    Circle(70.75,50.75,.75,0,360)
+10446    Circle(67.25,50.75,.75,0,360)
+10447    WINDOW 0,135,0,100
+10448 SUBEND
+10449!*********************************************
+10450!*********************************************
+10451 Dut:SUB Dut(Xpos,Ypos,Sizex,Sizey)
+10452    GRAPHICS ON
+10453    WINDOW -Xpos+Sizex,135-Xpos-Sizex,-Ypos+Sizey,100-Ypos-Sizey
+10454    Box(67,59,87,36)
+10455    Box(67,71,80,8)
+10456    Circle(37,46,2.25,0,360)
+10457    Circle(52.75,46,2.25,0,360)
+10458    Circle(60.25,46,2.25,0,360)
+10459    Circle(66.5,46,2.25,0,360)
+10460    Circle(102.5,46,3,0,360)
+10461    Circle(72,57.25,4.5,0,360)
+10462    WINDOW 0,135,0,100
+10463 SUBEND
+10464!*********************************************
+10465!*********************************************
+10466 F436:SUB F436(Xpos,Ypos,Sizex,Sizey)
+10467    GRAPHICS ON
+10468    WINDOW -Xpos+Sizex,135-Xpos-Sizex,-Ypos+Sizey,100-Ypos-Sizey
+10469    Box(69,74,49,27)
+10470    Box(69,81,47,12)
+10471    Box(52,72,1,1)
+10472    Box(56,72,1,1)
+10473    Box(60,72,1,1)
+10474    Box(67,72,1,1)
+10475    Box(77,72,1,1)
+10476    Box(86,72,1,1)
+10477    Box(55,81,9,5)
+10478    Connect(55,79.25,57,82,1)
+10479    Circle(67.25,65.5,2,0,360)
+10480    Circle(67.25,65.5,.75,0,360)
+10481    Circle(86.5,65.75,1.75,0,360)
+10482    Circle(49.25,65.25,2,0,360)
+10483    WINDOW 0,135,0,100
+10484 SUBEND
+10485!
+10486!
+10487!
+
+
+
+
+10488 Set_adc:SUB Set_adc(@Dut)
+10489!
+10490! *****************************************
+10491!      I N I T I A L I Z A T I O N
+10492! *****************************************
+10493    COM /Peripherals/ INTEGER Print,Kbd,Crt
+10494    Is_ref_locked("Dut",Junk)
+10495    IF FNDut_has("GOOD HARMON") THEN 
+10496       High_freq=10
+10497    ELSE
+10498       High_freq=4.5
+10499    END IF
+10500    Low_freq=1.5
+10501    INTEGER Value,Lower,Sense
+10502    DIM What_it_is$[70],Cal_name$[20]
+10503!
+10504!
+10505!=========================================
+10506!        ADJUST ADC CAL CONSTANTS
+10507!=========================================
+10508 Adc_adjust:!
+10509!
+10510    OFF KEY 0
+10511    Clr_scr
+10512    What_it_is$="       ADC ADJUSTMENTS"
+10513    OUTPUT @Dut;"IP PL0DB CW";High_freq;"GZ SHPS0DB"
+10514!
+10515    OUTPUT @Dut;"AM0 AM1"
+10516    Target=0
+10517    Cal_name$="ADC OFFSET"
+10518    GOSUB Adjust_cal_con
+10519!
+10520    OUTPUT @Dut;"SHPS-20DB AM0 AM1"
+10521    Target=-20
+10522    Cal_name$="ADC GAIN HI"
+10523    GOSUB Adjust_cal_con
+10524!
+10525    OUTPUT @Dut;"CW";Low_freq;"GZ"
+10526    Target=-20
+10527    Cal_name$="ADC GAIN LO"
+10528    GOSUB Adjust_cal_con
+10529!
+10530 Exit:!------------------------------------
+10531    Update_image("CHECK OFF","ADC GAIN LO","ADC GAIN HI","ADC OFFSET")
+10532    OUTPUT @Dut;"IP"
+10533    SUBEXIT
+10534!
+10535 Adjust_cal_con:!--------------------------
+10536!
+10537    SELECT Cal_name$!....pos or negative effect
+10538    CASE "ADC OFFSET"
+10539       Sense=-1
+10540       Max=100
+10541    CASE "ADC GAIN HI","ADC GAIN LO"
+10542       Sense=1
+10543       Max=100
+10544    CASE ELSE
+10545       DISP "huh ???"
+10546       PAUSE
+10547    END SELECT
+10548!
+10549    Steps=1
+10550!
+10551!
+10552    Clr_scr
+10553    PRINT "*************************************************"
+10554    PRINT What_it_is$
+10555    PRINT "*************************************************"
+10556    PRINT USING "4/"
+10557    PRINT "-----ADJUSTING :"&Cal_name$
+10558    Incr=5
+10559    Value=FNRead_cal(@Dut,FNCal_location(Cal_name$))
+10560    Old_value=Value
+10561!
+10562 Find_straddle:!
+10563    Value=FNRead_cal(@Dut,FNCal_location(Cal_name$))
+10564!
+10565!.....find two adjacent cal #'s
+10566!     that straddle the target
+10567!
+10568    Down_flag=0
+10569    Up_flag=0
+10570    LOOP
+10571       Meas=FNAdc_read(@Dut)
+10572       IF ABS(Meas-Target)<.06 THEN Incr=1
+10573       IF (Meas-Target)>=0 THEN 
+10574          IF Down_flag THEN 
+10575             Lower=Value
+10576             IF Incr=1 THEN Interpolate
+10577             Incr=Incr-1
+10578             GOTO Find_straddle
+10579          END IF
+10580          Value=Value+Sense*Incr
+10581          Up_flag=1
+10582       END IF
+10583       IF (Meas-Target)<0 THEN 
+10584          IF Up_flag THEN 
+10585             Lower=Value-Sense*Incr
+10586             IF Incr=1 THEN Interpolate
+10587             Incr=Incr-1
+10588             GOTO Find_straddle
+10589          END IF
+10590          Value=Value-Sense*Incr
+10591          Down_flag=1
+10592       END IF
+10593       IF ABS(Value)>Max THEN Out_of_range
+10594       Write_cal(@Dut,FNCal_location(Cal_name$),Value)
+10595    END LOOP
+10596!
+10597!
+10598!  ....now double check that the target
+10599!      is between Upper and Lower
+10600!
+10601 Interpolate:!
+10602    IF ABS(Lower)>Max THEN Out_of_range
+10603    Write_cal(@Dut,FNCal_location(Cal_name$),Lower)
+10604    P_lower=FNAdc_read(@Dut)
+10605    IF ABS(Lower+Sense)>Max THEN Out_of_range
+10606    Write_cal(@Dut,FNCal_location(Cal_name$),Lower+Sense)
+10607    P_upper=FNAdc_read(@Dut)
+10608    IF P_upper=P_lower THEN Find_straddle
+10609!
+10610! ....now interpolate
+10611!
+10612    Best_no=Sense*(Target-P_lower)/(P_upper-P_lower)*Steps+Lower-(Steps-1)/2
+10613    Value=INT(Best_no)+INT(2*(Best_no-INT(Best_no)))
+10614    IF ABS(Value)>Max THEN Out_of_range
+10615    Write_cal(@Dut,FNCal_location(Cal_name$),Value)
+10616    PRINT 
+10617    PRINT "CHANGED :";Old_value;" to ";Value
+10618    WAIT 1
+10619    RETURN 
+10620!
+10621 Out_of_range:!
+10622    PRINT "CALIBRATION CONSTANT :"&Cal_name$&" OUT OF RANGE !!!!"
+10623    PAUSE
+10624    RETURN 
+10625!
+10626!
+10627!
+10628 SUBEND
+10629!
+10630 Adc_read:!==================================
+10631!============================================
+10632!
+10633!  Turn AM on/off to force ADC to sample.
+10634!  Then return the meter reading
+10635!
+10636!============================================
+10637!============================================
+10638 DEF FNAdc_read(@Dut)
+10639    OUTPUT @Dut;"AM0"
+10640    WAIT .5
+10641    OUTPUT @Dut;"AM1"
+10642    WAIT .5
+10643    OUTPUT @Dut;"OR"
+10644    ENTER @Dut;Reading
+10645    RETURN Reading
+10646 FNEND
+10647!
+10648!
+10649 SUB Test_adc(@Dut,Jan_mode$,Test_mode$)
+10650 Test_adc:!==================================
+10651!============================================
+10652!
+10653! This subprogram tests the ADC accuracy and
+10654! displays error message if failure.
+10655!
+10656!============================================
+10657!============================================
+10658!
+10659    COM /Peripherals/ INTEGER Print,Kbd,Crt
+10660    IF FNDut_has("GOOD HARMON") THEN 
+10661       High_freq=10
+10662    ELSE
+10663       High_freq=4.5
+10664    END IF
+10665    Low_freq=1.5
+10666!
+10667 Adc_verify:!
+10668    OUTPUT @Dut;"IP PL0DB CW4.5GZ RP1"
+10669    Clr_scr
+10670    OFF KEY 
+10671    ON KEY 9 LABEL "ABORT" GOTO Exit
+10672    DISP "CHECKING ADC OFFSETS......"
+10673    Passed=0
+10674    FOR Band=1 TO 2
+10675       IF Band<1.5 THEN Freq=Low_freq
+10676       IF Band>1.5 THEN Freq=High_freq
+10677       OUTPUT @Dut;"CW";Freq;"GZ"
+10678       FOR Power=-20 TO 20 STEP 2
+10679          OUTPUT @Dut;"SHPS";Power;"DB CS"
+10680          WAIT .2
+10681          IF NOT FNUnleveled(@Dut) THEN 
+10682             Window=FNAdc_read(@Dut)
+10683             IF ABS(Window-Power)>.16 THEN 
+10684                IF NOT Heading_flag THEN 
+10685                   Clr_scr
+10686                   PRINT "  ADC ERRORS OUT OF SPEC (.15 dB)  @ :"
+10687                   PRINT 
+10688                   PRINT "     CW      PROGRAMMED    POWER"
+10689                   PRINT "    FREQ       POWER       WINDOW"
+10690                   PRINT "-------------------------------------------------"
+10691                   Heading_flag=1
+10692                END IF
+10693                Passed=-1
+10694 Im7:           IMAGE  3D.3D," GHz",3X,3D.2D,"dBm",3X,3D.2D,"dB"
+10695                PRINT USING Im7;Freq,Power,Window
+10696             END IF
+10697          END IF
+10698       NEXT Power
+10699    NEXT Band
+10700!
+10701    BEEP 500,.5
+10702    IF Passed=-1 THEN 
+10703       IF Jan_mode$<>"MENU" AND Print<>1 THEN 
+10704          PRINTER IS Print
+10705          Top_of_page
+10706          DUMP ALPHA
+10707          PRINTER IS Crt
+10708          SUBEXIT
+10709       END IF
+10710       DISP ".........FAILED; SELECT KEY BELOW"
+10711       OFF KEY 
+10712       ON KEY 9 LABEL "ABORT" GOTO Exit
+10713       ON KEY 5 LABEL "RETEST" GOTO Adc_verify
+10714       ON KEY 7 LABEL "RE-ADJUST" GOSUB Readjust
+10715       LOOP
+10716       END LOOP
+10717    ELSE
+10718       IF Test_mode$="EI_" THEN 
+10719          PRINTER IS Print
+10720          Top_of_page
+10721          PRINT USING "15/"
+10722          PRINT "**************************************************"
+10723          PRINT "**************  ADC ACCURACY PASSED **************"
+10724          PRINT "**************************************************"
+10725          PRINTER IS Crt
+10726          SUBEXIT
+10727       END IF
+10728       Clr_scr
+10729       BEEP 300,.1
+10730       DISP "ADC/AM OFFSET IS OK !!!!!!!"
+10731       Passed=1
+10732       WAIT 2
+10733    END IF
+10734    SUBEXIT
+10735 Readjust:   !
+10736    Set_adc(@Dut)
+10737    RETURN 
+10738 Exit:SUBEND
+10739 !
+10740 !
+10741 SUB Zero_dac_off
+10742 Zero_dac_off:!
+10743 !
+10744    COM /Hpib_codes/ @Dut,@Sa,@Sb,@Co,@Pwr,@Dvm,@Fgn,@Rfgn,@Het,@Mod,@Atn
+10745    COM /Hpib_codes/ @Timer,@D13,@D14,@D15,@D16
+10746    DIM Message$[80]
+10747    INTEGER Level_off
+10748 !
+10749    Range=.2
+10750    Coupler_loss=.2
+10751    !
+10752    Clr_scr
+10753    Message$="Zeroing LEVEL DAC OFFSET Cal Const."
+10754    Show_message(Message$)
+10755    !
+10756    OUTPUT @Dut;"IPCW4.5GZ PL0DB"
+10757    Level_off=FNRead_cal(@Dut,FNCal_location("LVL DAC OFF"))
+10758    !
+10759    LOOP
+10760       Meas_pwr=FNPwr_mtr(@Pwr)+Coupler_loss
+10761    EXIT IF Meas_pwr>=-Range AND Meas_pwr<=Range
+10762       IF Meas_pwr<=-Range THEN Level_off=Level_off+1
+10763       IF Meas_pwr>=Range THEN Level_off=Level_off-1
+10764       Write_cal(@Dut,FNCal_location("LVL DAC OFF"),Level_off)
+10765    END LOOP
+10766 !
+10767 SUBEND

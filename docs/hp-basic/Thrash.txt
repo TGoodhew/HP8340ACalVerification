@@ -1,0 +1,215 @@
+9000  DEF FNTest_file$
+9001     RETURN "Thrash"
+9002  FNEND
+9003  !
+9004  !**************************************************
+9005  !*                                                *
+9006  !*  Copyright (C) Hewlett-Packard Co. 1982,1987   *
+9007  !*                                                *
+9008  !**************************************************
+9009  !
+9010  SUB Thrash(Model$,Ser_no$,Opt$,Jan_mode$,Test_mode$,INTEGER Pass_fail,Depend)
+9011 Thrash:  ! Label for easy editing
+9012  ! **********************************************************
+9013  !    8 3 4 0 -  F A M I L Y    L O O P   T H R A S H E R
+9014  !
+9015  !
+9016  !
+9017  !                                  December 22, 1982
+9018  !
+9019  ! **********************************************************
+9020  !  REVISION LOG:
+9021  !
+9022  !  10/22/86  Modified select code 7 commands to use SC(@Dut), field
+9023  !            used select code 8 for DUT. Also added call to Instr_
+9024  !            present for field.   DG
+9025  ! ************************************************************
+9026     Rev$="A  10.22.86"!    DG
+9027  ! ************************************************************
+9028     OPTION BASE 1
+9029  !
+9030  !
+9031  ! *****************************************
+9032  !      I N I T I A L I Z A T I O N
+9033  ! *****************************************
+9034     COM /Hpib_codes/ @Dut,@Sa,@Sb,@Co,@Pwr_mtr,@Dvm,@Fgn,@Rfgn,@Het,@Mod,@Atn
+9035     COM /Hpib_codes/ @Timer,@D13,@D14,@D15,@D16
+9036     Depend=0!...not used in this program
+9037     INTEGER Sts_byte
+9038  !
+9039  ! ----------------------------------------
+9040  !     >>>>>  TEST  MENU  <<<<<<
+9041  ! ----------------------------------------
+9042     SELECT Test_mode$
+9043     CASE "FSP","FSV","FSC"
+9044        OFF TIMEOUT 
+9045        Instr_present(@Dut,"Device Under Test")
+9046     END SELECT
+9047     IF Jan_mode$<>"MENU" THEN Begin
+9048  !
+9049 Test_menu: !
+9050     Clr_scr
+9051     OFF KEY 
+9052     PRINT " ************************************************"
+9053     PRINT "           L O O P   T H R A S H E R"
+9054     PRINT 
+9055     PRINT "         REV. ";Rev$;"     S/N : ";Ser_no$
+9056     PRINT " ************************************************"
+9057     PRINT 
+9058     SELECT Pass_fail
+9059     CASE 1
+9060        PRINT "         instrument PASSED !!!"
+9061     CASE -1
+9062        PRINT "         instrument FAILED !!!"
+9063     CASE ELSE
+9064        PRINT 
+9065     END SELECT
+9066     PRINT 
+9067     PRINT " SELECT A KEY BELOW :  --------------------------"
+9068     PRINT 
+9069     PRINT "     THRASH:   beat the living daylights out"
+9070     PRINT "               of all of the loops."
+9071     PRINT 
+9072     PRINT "     JANITOR:  return to Test Menu."
+9073     PRINT 
+9074     PRINT "-------------------------------------------------"
+9075     ON KEY 5 LABEL "THRASH" GOTO Begin
+9076     ON KEY 9 LABEL "JANITOR" GOTO Exit
+9077     FOR I=1 TO 6
+9078        BEEP 1500+1000*SIN(RND*1.5),.05
+9079     NEXT I
+9080 Waiting:GOTO Waiting
+9081!
+9082 Exit:OUTPUT @Dut;"CS RM"&CHR$(0)&"HZ IP"
+9083     SUBEXIT
+9084!
+9085!===========================================
+9086 Begin:!------------------------------------
+9087!===========================================
+9088!
+9089     Clr_scr
+9090     Pass_fail=0
+9091     Abort_flag=0
+9092     OFF KEY 
+9093     ON KEY 9 LABEL "ABORT",3 GOSUB Abort_test
+9094     CLEAR SC(@Dut)
+9095!
+9096 Setup_registers:!
+9097     OUTPUT @Dut;"IP SHRC"
+9098     OUTPUT @Dut;"CW6.89GZ RF0 SV1"
+9099     OUTPUT @Dut;"CW2.3GZ SV2"
+9100     OUTPUT @Dut;"CW2.999999999GZ SV3"
+9101     OUTPUT @Dut;"CW3GZ SV4"
+9102     OUTPUT @Dut;"FA2.999999998GZ FB3.00009998GZ ST10MS S1 SV5"
+9103 !
+9104 !
+9105 !  .....enable HPIB SRQ on unlock
+9106     OUTPUT @Dut;"IP RF0 SHM1 RE"&CHR$(16)
+9107     OUTPUT @Dut;"CS RM"&CHR$(4)
+9108     ON INTR SC(@Dut) GOSUB Srq_routine
+9109 !
+9110 !
+9111 !    <<<     M/N & YO LOOPS   >>>
+9112 !
+9113     Title$="M/N & YO LOOPS"
+9114     Register_a=1
+9115     Register_b=2
+9116     IF Abort_flag THEN Test_menu
+9117     GOSUB Alternate
+9118 !
+9119 !
+9120 !    <<<   PLL1 & PLL2 LOOPS   >>>
+9121 !
+9122     Title$="PLL1 & PLL2 LOOPS"
+9123     Register_a=3
+9124     Register_b=4
+9125     IF Abort_flag THEN Test_menu
+9126     GOSUB Alternate
+9127 !
+9128 !
+9129 !    <<<   ALL 20/30 LOOPS   >>>
+9130 !
+9131     Title$="ALL 20/30 LOOPS"
+9132     Register_a=4
+9133     Register_b=5
+9134     IF Abort_flag THEN Test_menu
+9135     GOSUB Alternate
+9136 !
+9137 !
+9138     IF Pass_fail=-1 THEN CALL Fail_count
+9139     IF Pass_fail=0 THEN CALL Pass_count(Pass_fail)
+9140 !
+9141     IF Jan_mode$<>"MENU" THEN Exit
+9142     GOTO Test_menu
+9143 !
+9144 !
+9145 Alternate:!
+9146     OUTPUT @Dut;"RC";Register_a;"HZ"
+9147     OUTPUT @Dut;"AL1";Register_b;"HZ"
+9148     WAIT .2
+9149     OUTPUT @Dut;"CS RM"&CHR$(4);"HZ"
+9150     WAIT .1
+9151     ENABLE INTR SC(@Dut);2
+9152     PRINT "THRASHING : "&Title$
+9153     WAIT 5
+9154     DISABLE INTR SC(@Dut)
+9155     RETURN 
+9156 !
+9157 Abort_test:Abort_flag=1
+9158     BEEP 200,.3
+9159     OFF KEY 4
+9160     RETURN 
+9161 !
+9162 Srq_routine:!
+9163     STATUS SC(@Dut),4;Sts
+9164     IF NOT BIT(Sts,1) THEN 
+9165        DISP "SRQ RECIEVED---WHO DUN IT ??"
+9166        GOTO Retrn
+9167     END IF
+9168     Fault=FNFault(@Dut)
+9169     Sts_byte=SPOLL(@Dut)
+9170     IF Fault=0 THEN Retrn
+9171     Pass_fail=-1
+9172     GOSUB Beap
+9173     Clr_scr
+9174     PRINT "THRASHING : "&Title$
+9175     PRINT USING "3/"
+9176     PRINT "**************************************************"
+9177     PRINT "**************************************************"
+9178     PRINT "**************************************************"
+9179     PRINT "***********<<<   UNLOCK DETECTED  >>>*************"
+9180     PRINT "**************************************************"
+9181     PRINT "**************************************************"
+9182     PRINT "**************************************************"
+9183     PRINT 
+9184     PRINT "LOOP(s) UNLOCKED :";
+9185     IF BIT(Fault,2) THEN PRINT "  N1";
+9186     IF BIT(Fault,3) THEN PRINT "  N2";
+9187     IF BIT(Fault,4) THEN PRINT "  YO";
+9188     IF BIT(Fault,5) THEN PRINT " HET";
+9189     IF BIT(Fault,6) THEN PRINT " M/N";
+9190     IF BIT(Fault,7) THEN PRINT " REF";
+9191     PRINT 
+9192     ON KEY 0 LABEL "GO ON",2 GOTO Retrn
+9193     DISP "     *  *  *  *    select key   *  *  *  *  *  * "
+9194     IF Jan_mode$<>"MENU" THEN 
+9195        DUMP ALPHA
+9196        RETURN 
+9197     END IF
+9198     LOOP
+9199        IF Abort_flag THEN RETURN 
+9200     END LOOP
+9201  !
+9202 Retrn:OUTPUT @Dut;"CS RM"&CHR$(4);"HZ"
+9203     ENABLE INTR SC(@Dut);2
+9204     RETURN 
+9205  !
+9206  !
+9207 Beap:  !
+9208     BEEP 1600,.2
+9209     BEEP 2350,.2
+9210     BEEP 2000,.2
+9211     BEEP 1350,.2
+9212     BEEP 1600,.4
+9213     RETURN 
+9214  SUBEND

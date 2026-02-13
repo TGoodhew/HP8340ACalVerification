@@ -1,0 +1,1460 @@
+9000  DEF FNTest_file$
+9001     RETURN "Pwracc"
+9002  FNEND
+9003  !
+9004  !**************************************************
+9005  !*                                                *
+9006  !*  Copyright (C) Hewlett-Packard Co. 1982,1987   *
+9007  !*                                                *
+9008  !**************************************************
+9009  !
+9010  SUB Pwracc(Model$,Ser_no$,Opt$,Jan_mode$,Test_mode$,INTEGER Pass_fail,Depend)
+9011  ! *****************************************
+9012  ! *****************************************
+9013 Pwracc: !***********************************
+9014  ! *****************************************
+9015  !
+9016  !    OUTPUT POWER ACCURACY VERIFICATION
+9017  !
+9018  !       part # :  08340-90068
+9019  !
+9020  !                 6/15/82
+9021  !
+9022  !
+9023  ! *****************************************
+9024  ! *****************************************
+9025  ! Revision Log :
+9026  ! 05/07/84  Added USER common block for Cal_factors(*)  ms
+9027  ! 07/17/84  Added 8341 capabilities.   MS
+9028  ! 10/12/84  Added ALPHA ON to output routine.  MS
+9029  ! 12/11/84  AUTO-TRACKED in temperature chamber.   MS
+9030  ! 04/25/85  Changed to Wait_for_cont.    MS
+9031  ! 02/12/86  Modified call to Get_pwr_cal.  JT
+9032  ! 02/13/86  Finished Jim's job properly.    MD/GB
+9033  ! 03/05/86  Added Field Service FSA,FSC,FSV to SELECT Test_mode$ cases.
+9034  !           Also added abort key during print out.   DG
+9035  ! 03/24/86  Modified Pwracc_out to call Top_of_page after 2 plots.  DG
+9036  ! 04/08/86  Modified select to determine if power level entry is within
+9037  !           the allowed limits and added more operator interaction.  DG
+9038  ! 05/15/86  Modified softkeys & added call to Clr_scr during graphics
+9039  !           output for Series 300 compatibility.   DG
+9040  ! 08/08/86  Corrected specs to reflect O&S Manual specs table.  GB/DG
+9041  ! 09/08/86  Added option 003 power points to Pwracc_parms.   GB/DG
+9042  ! 10/22/86  Added call to Instr_present for field.  Check value of Print
+9043  !           before executing a DUMP GRAPHICS.  DG
+9044  ! 11/14/86  Added Old_range to FNPwr_mtr.  MD
+9045  ! 11/18/86  Changed field spec to customer spec.    DG
+9046  ! 12/17/86  Changed VIEWPORT for Series 300 compatibility.  DG
+9047  ! 01/07/87  Modified axis label size for Series 300 compatibility. DG
+9048  ! *****************************************
+9049     Rev$="A    01.07.86"!     DG
+9050  ! *****************************************
+9051  !
+9052  !
+9053  ! -----------------------------------------
+9054  !      I N I T I A L I Z A T I O N
+9055  ! -----------------------------------------
+9056     OPTION BASE 1
+9057     OFF TIMEOUT 
+9058     COM /Hpib_codes/ @Dut,@Sa,@Sb,@Co,@Pwr_mtr,@Dvm,@Fgn,@Rfgn,@Het,@Mod,@Atn
+9059     COM /Hpib_codes/ @Timer,@D13,@D14,@D15,@D16
+9060     COM /Peripherals/ INTEGER Print,Kbd,Crt
+9061     COM /User_data/ U1(*),U2(*),Cal_factors(*),U3(*),U4(*)
+9062     Is_ref_locked("DUT",Junk)
+9063     DIM Power(10),Freq(500)
+9064     INTEGER Got_sensor_cal,Dest,High_band_zero,Low_band_zero,Ok
+9065     INTEGER Store_data,Acc_fail,Flat_fail,Unlvl_print,Pwrs,Frqs,Hardcopy,Flat_f,Acc_f,Pwrptr
+9066     INTEGER Auto_tracked
+9067  !
+9068  !
+9069  !-----------------------------------------
+9070  !  LOAD TEST CONFIGURATION AND SPECS
+9071  !-----------------------------------------
+9072     Pwracc_parms(Rev$[1,1],Opt$,Power(*),Freq(*),Pwrs,Frqs)
+9073     ALLOCATE Pwr_data(0:Pwrs,0:Frqs)
+9074     Max_num_pts=Frqs-1
+9075  !
+9076  !
+9077     SELECT Test_mode$
+9078     CASE "EI_","T00" TO "T99"
+9079        Got_sensor_cal=1
+9080        GOTO Verify
+9081     CASE ELSE
+9082        Got_sensor_cal=0
+9083     END SELECT
+9084  !
+9085  ! ----------------------------------------
+9086  !            TEST  MENU
+9087  ! ----------------------------------------
+9088 Test_menu: !
+9089     Clr_scr
+9090     OFF KEY 
+9091     PRINT " ------------------------------------------------"
+9092     PRINT "            OUTPUT POWER ACCURACY TEST"
+9093     PRINT "         REV. ";Rev$;"     S/N : ";Ser_no$
+9094     PRINT " ------------------------------------------------"
+9095     PRINT 
+9096     PRINT "o  SET UP : Test set up instructions."
+9097     PRINT 
+9098     PRINT "o  VERIFY : Measure Output Power Accuracy across"
+9099     PRINT "            full frequency range. Stores Data."
+9100     PRINT 
+9101     PRINT "o  SELECT : Measure accuracy in selected frequency"
+9102     PRINT "            range and power. Does not store data."
+9103     PRINT 
+9104     PRINT "o JANITOR : Return to Test Menu."
+9105     ON KEY 0 LABEL "SET UP" GOTO Set_up
+9106     ON KEY 2 LABEL "VERIFY" GOTO Verify
+9107     ON KEY 4 LABEL "SELECT" GOTO Select_test
+9108     ON KEY 9 LABEL "JANITOR" GOTO Exit
+9109     BEEP 400,.1
+9110  !
+9111     DISP "------------------ select a key ------------------"
+9112     LOOP
+9113     END LOOP
+9114  !
+9115  !
+9116  !-------------------------------------------
+9117  !          TEST SET UP INSTRUCTIONS
+9118 Set_up: !------------------------------------
+9119  !
+9120     Clr_scr
+9121     LOCAL 7
+9122     CALL Pwracc_hookup
+9123     REMOTE @Pwr_mtr
+9124     GOTO Test_menu
+9125  !
+9126  ! ----------------------------------------
+9127  !           FULL & SELECT TEST
+9128  ! ----------------------------------------
+9129  !
+9130 Verify: !-----------------------------------
+9131     OFF KEY 
+9132     SELECT Test_mode$
+9133     CASE "T00" TO "T55"
+9134        IF NOT Auto_tracked THEN 
+9135           OUTPUT @Dut;"SHRP"
+9136           Auto_tracked=1
+9137        END IF
+9138     CASE "FSP","FSC","FSV"
+9139        Instr_present(@Dut,"Device Under Test")
+9140        Instr_present(@Pwr_mtr,"Power Meter")
+9141     END SELECT
+9142     Store_data=1
+9143    ! When running thermal test meter cal is already loaded
+9144     IF NOT Got_sensor_cal THEN CALL Get_pwr_cal(Cal_factors(*),Got_sensor_cal)
+9145     IF NOT Got_sensor_cal THEN Test_menu
+9146     Pwracc_parms(Rev$[1,1],Opt$,Power(*),Freq(*),Pwrs,Frqs)
+9147     GOSUB Max_min_freq
+9148     Acc_fail=0
+9149     Flat_fail=0
+9150     GOSUB Init_data_array
+9151     GOSUB Pack_freqs
+9152     FOR Pwrptr=1 TO Pwrs
+9153        Power_level=Power(Pwrptr)
+9154        Pwr_data(Pwrptr,0)=Power_level
+9155        GOSUB Measure_one_pwr
+9156        Pwr_plot(Ser_no$,Opt$,Rev$,Pwr_data(*),Min_freq,Max_freq,Test_mode$,Pwrptr,Frqs,Acc_f,Flat_f,0)
+9157        IF Acc_f=1 THEN Acc_fail=1
+9158        IF Flat_f=1 THEN Flat_fail=1
+9159     NEXT Pwrptr
+9160     GOSUB Store_data
+9161     GOTO Output_menu
+9162  !
+9163  !
+9164  !
+9165 Select_test: !-------------------------------
+9166     SELECT Test_mode$
+9167     CASE "FSP","FSV","FSC"
+9168        Instr_present(@Dut,"Device Under Test")
+9169        Instr_present(@Pwr_mtr,"Power Meter")
+9170     END SELECT
+9171     OFF KEY 
+9172     ON KEY 9 LABEL "ABORT" GOTO Test_menu
+9173     Acc_fail=0
+9174     Store_data=0
+9175     Clr_scr
+9176     GOSUB Max_min_freq
+9177     Get_pwr_cal(Cal_factors(*),Got_sensor_cal)
+9178     IF NOT Got_sensor_cal THEN Test_menu
+9179 Input_start:     !
+9180     INPUT "enter START freq  (GHz) :",Startf
+9181     Clr_scr
+9182     IF Startf<Min_freq OR Startf>Max_freq THEN 
+9183        Clr_scr
+9184        PRINT "**************************************************"
+9185        PRINT 
+9186        PRINT "The start frequency you entered is outside of the"
+9187        PRINT "frequency range of the synthesizer.  Press the Re-"
+9188        PRINT "Enter softkey to re-enter the start frequency."
+9189        PRINT 
+9190        PRINT "**************************************************"
+9191        ON KEY 5 LABEL "ReEnter" GOTO Input_start
+9192        LOOP
+9193        END LOOP
+9194     END IF
+9195 Input_stop:     !
+9196     INPUT "enter STOP freq   (GHz) :",Stopf
+9197     IF Stopf<Min_freq OR Stopf>Max_freq OR Stopf<=Startf THEN 
+9198        Clr_scr
+9199        PRINT "**************************************************"
+9200        PRINT 
+9201        PRINT "The stop frequency you entered is outside of the"
+9202        PRINT "frequency range of the synthesizer.  Press the Re-"
+9203        PRINT "Enter softkey to re-enter the start frequency."
+9204        PRINT 
+9205        PRINT "**************************************************"
+9206        ON KEY 5 LABEL "ReEnter" GOTO Input_stop
+9207        LOOP
+9208        END LOOP
+9209     END IF
+9210 Input_points:     !
+9211     INPUT "enter number of points :",Frqs
+9212     IF Frqs>Max_num_pts THEN 
+9213        Clr_scr
+9214        PRINT "**************************************************"
+9215        PRINT 
+9216        PRINT "The number of points entered must be less than"
+9217        PRINT VAL$(Max_num_pts)&".  Press the ReEnter softkey to re-enter"
+9218        PRINT "the number of points."
+9219        PRINT 
+9220        PRINT "**************************************************"
+9221        ON KEY 5 LABEL "ReEnter" GOTO Input_points
+9222        LOOP
+9223        END LOOP
+9224     END IF
+9225 Input_pwr:    !
+9226     Max_pwr_lvl=FNMax_pwr(@Dut,Stopf,Opt$)
+9227     Clr_scr
+9228     PRINT "**************************************************"
+9229     PRINT 
+9230     PRINT "       The power level you enter must be"
+9231     PRINT "       between -20 and";Max_pwr_lvl;"dBm."
+9232     PRINT 
+9233     PRINT "**************************************************"
+9234     INPUT "enter POWER LEVEL (dBm):",Power_level
+9235     IF Power_level<-20 OR Power_level>Max_pwr_lvl THEN 
+9236        Clr_scr
+9237        PRINT "**************************************************"
+9238        PRINT 
+9239        PRINT "The power level you entered is outside the allowed"
+9240        PRINT "range for the selected start and stop frequencies."
+9241        PRINT "The power level you enter must be between -20 and"
+9242        PRINT Max_pwr_lvl;"dBm.  Press the ReEnter softkey to re-enter"
+9243        PRINT "the power level."
+9244        PRINT 
+9245        PRINT "**************************************************"
+9246        ON KEY 5 LABEL "ReEnter" GOTO Input_pwr
+9247        LOOP
+9248        END LOOP
+9249     END IF
+9250     FOR I=0 TO Frqs
+9251        Freq(I+1)=Startf+I*(Stopf-Startf)/Frqs
+9252     NEXT I
+9253     Frqs=Frqs+1
+9254     GOSUB Init_data_array
+9255     GOSUB Pack_freqs
+9256     Pwr_data(1,0)=Power_level
+9257     Pwrptr=1
+9258     Pwrs=1
+9259     GOSUB Measure_one_pwr
+9260     Pwr_plot(Ser_no$,Opt$,Rev$,Pwr_data(*),Startf,Stopf,Test_mode$,Pwrptr,Frqs,Acc_f,Flat_f,0)
+9261     Acc_fail=Acc_f
+9262     Flat_fail=Flat_f
+9263     GOTO Output_menu
+9264  !
+9265  !
+9266 Init_data_array: !...set all to -9999
+9267     FOR I=0 TO Frqs
+9268        FOR J=0 TO Pwrs
+9269           Pwr_data(J,I)=-9999
+9270        NEXT J
+9271     NEXT I
+9272     RETURN 
+9273  !
+9274 Pack_freqs: !
+9275     FOR I=1 TO Frqs
+9276        Pwr_data(0,I)=Freq(I)
+9277     NEXT I
+9278     RETURN 
+9279  !
+9280 Max_min_freq: !
+9281     IF FNDut_has("BAND 4",Opt$) THEN 
+9282        Max_freq=26.5
+9283     ELSE
+9284        Max_freq=20
+9285     END IF
+9286     Min_freq=.01
+9287     RETURN 
+9288  !
+9289  !------------------------------------------
+9290  !     MEASUREMENT SECTION
+9291  !------------------------------------------
+9292 Measure_one_pwr:!
+9293     Clr_scr
+9294     OFF KEY 
+9295     ON KEY 9 LABEL "ABORT" RECOVER Test_menu
+9296     OUTPUT @Dut;"IP PL0DB S3"
+9297     OUTPUT @Pwr_mtr;"9D+T"
+9298     OUTPUT @Dut;"IP AT0DB SHPS";Power_level;"DB S310MZS3"
+9299  !
+9300  !
+9301 Fmt7:IMAGE 3D.3D,5X,SDD.DD
+9302 Img3:IMAGE "measuring OUTPUT ACCURACY at ",SDD.D," dBm"
+9303  !
+9304  !
+9305     Low_band_zero=0
+9306     High_band_zero=0
+9307     Old_range=0
+9308     FOR Frqptr=1 TO Frqs
+9309        DISP USING Img3;Power_level
+9310        Frequency=Freq(Frqptr)
+9311        OUTPUT @Dut;Frequency;"GZ"
+9312        IF Frequency<2.4 THEN 
+9313           IF NOT Low_band_zero THEN 
+9314              OUTPUT @Dut;"RF0"
+9315              Pwr_mtr_settled(@Pwr_mtr)
+9316              Zero_pwr_mtr(@Pwr_mtr)
+9317              Low_band_zero=1
+9318              OUTPUT @Dut;"RF1"
+9319              Pwr_mtr_settled(@Pwr_mtr)
+9320           END IF
+9321        ELSE
+9322           IF NOT High_band_zero THEN 
+9323              OUTPUT @Dut;"RF0"
+9324              Pwr_mtr_settled(@Pwr_mtr)
+9325              Zero_pwr_mtr(@Pwr_mtr)
+9326              High_band_zero=1
+9327              OUTPUT @Dut;"RF1"
+9328              Pwr_mtr_settled(@Pwr_mtr)
+9329           END IF
+9330        END IF
+9331        IF Power_level<=FNMax_pwr(@Dut,Frequency,Opt$) THEN 
+9332           Ok=0
+9333           GOSUB Check_unleveled
+9334           IF Ok THEN 
+9335              Meas_pwr=FNPwr_mtr(Frequency,Cal_factors(*),Old_range)
+9336              PRINT USING Fmt7;Frequency,Meas_pwr
+9337              Pwr_data(Pwrptr,Frqptr)=Meas_pwr
+9338           END IF
+9339        END IF
+9340     NEXT Frqptr
+9341  !
+9342     RETURN 
+9343  !
+9344  !===========================================
+9345  !-----------OUTPUT MENU SECTION-------------
+9346  !===========================================
+9347 Output_menu: !
+9348    !
+9349     SELECT Test_mode$
+9350     CASE "EI_"
+9351        CALL Pwracc_out(Model$,Ser_no$,Test_mode$,"PRINT",Error$)
+9352        SUBEXIT
+9353     CASE "T00" TO "T99"
+9354        SUBEXIT
+9355     END SELECT
+9356    !
+9357     Clr_scr
+9358     OFF KEY 
+9359     IF Acc_fail OR Flat_fail THEN 
+9360        Result$="FAILED"
+9361     ELSE
+9362        Result$="PASSED"
+9363     END IF
+9364     PRINT "-------------------------------------------------"
+9365     PRINT "      OUTPUT POWER ACCURACY TEST RESULTS :"
+9366     PRINT "-------------------------------------------------"
+9367     PRINT "       REV : ";Rev$;"     S/N : ";Ser_no$
+9368     PRINT 
+9369     PRINT "================================================="
+9370     PRINT "     RESULT :   instrument ";Result$
+9371     PRINT "================================================="
+9372     PRINT 
+9373     IF Result$="FAILED" THEN 
+9374        PRINT "--- re-check FLATNESS and ALC ADJUSTMENTS !!!"
+9375        PRINT 
+9376     END IF
+9377     PRINT "  select soft key below :"
+9378     PRINT 
+9379     PRINT "DISPLAY  -  Output test results to CRT."
+9380     PRINT "PRINT    -  Output test results to Printer."
+9381     PRINT "BEGIN    -  Return to OUTPUT POWER ACCURACY MENU."
+9382     PRINT "JANITOR  -  Return to the Test Menu."
+9383  !
+9384     ON KEY 0 LABEL "DISPLAY" GOTO Soft_copy
+9385     ON KEY 2 LABEL "PRINT" GOTO Hard_copy
+9386     ON KEY 4 LABEL "BEGIN" GOTO Test_menu
+9387     ON KEY 9 LABEL "JANITOR" GOTO Exit
+9388  !
+9389     BEEP 800,.1
+9390  !
+9391 Wait_4_key:GOTO Wait_4_key
+9392  !
+9393 Soft_copy:Dest$="DISPLAY"
+9394     GOTO Print
+9395  !
+9396 Hard_copy:Dest$="PRINT"
+9397 Print:!
+9398     Pwracc_out(Model$,Ser_no$,Test_mode$,Dest$,Error$,Rev$[1,1],Opt$,Pwr_data(*),Frqs,Pwrs)
+9399     GOTO Output_menu
+9400  !
+9401  !
+9402 Exit:SUBEXIT
+9403  !
+9404  !
+9405  !_________________________________________
+9406  !
+9407  !        S U B R O U T I N E S
+9408  !_________________________________________
+9409  !
+9410  !
+9411  !===========================================
+9412 Store_data:  !-------------------------------
+9413  !===========================================
+9414     IF Acc_fail OR Flat_fail THEN 
+9415        Fail_count(Pass_fail)
+9416     ELSE
+9417        Pass_count(Pass_fail)
+9418     END IF
+9419     IF Store_data THEN 
+9420        Clr_scr
+9421        DISP "               ***** STORING DATA *****"
+9422        Pwracc_out(Model$,Ser_no$,Test_mode$,"STORE",Error$,Rev$,Opt$,Pwr_data(*),Frqs,Pwrs)
+9423        DISP 
+9424     END IF
+9425     RETURN 
+9426  !
+9427  !
+9428  !------------------------------------------
+9429  !        CHECK FOR 8340 UNLEVELED
+9430  !------------------------------------------
+9431  !
+9432 Check_unleveled: !
+9433     Peaked=0
+9434     Ok=1
+9435 Enter_status:    !
+9436     IF FNUnleveled(@Dut) THEN 
+9437        IF Peaked<>1 THEN 
+9438           OUTPUT @Dut;"RP1 RP0"
+9439           Peaked=1
+9440           GOTO Enter_status
+9441        END IF
+9442        Ok=0
+9443        SELECT Test_mode$
+9444        CASE "CF_","EI_","FSC","FSA","FSP","FSV"
+9445           Clr_scr
+9446           PRINT "8340 IS UNLEVELED !!!!!!!"
+9447           PRINT USING "4/"
+9448           PRINT "correct condition and then re-run this test..."
+9449           DISP "press CarryOn to return to the test menu"
+9450           BEEP 1000,.1
+9451           BEEP 2000,.1
+9452           BEEP 700,.1
+9453           BEEP 800,.1
+9454           OFF KEY 
+9455           Wait_for_cont
+9456           GOTO Test_menu
+9457        CASE ELSE
+9458           IF NOT Unlvl_print THEN 
+9459              Unlvl_print=1
+9460              PRINTER IS Print
+9461              PRINT 
+9462              PRINT "**************************************************"
+9463              PRINT "**************************************************"
+9464              PRINT "**************************************************"
+9465              PRINT 
+9466              PRINT "  8340 UNLEVELED DURING POWER ACCURACY TEST !!!!"
+9467              Temp$=Test_mode$[2]
+9468              PRINT 
+9469              PRINT "              ---- temperature : "&Temp$&" Degrees"
+9470              PRINT 
+9471              PRINT "**************************************************"
+9472              PRINT "**************************************************"
+9473              PRINT "**************************************************"
+9474              PRINTER IS Crt
+9475           END IF
+9476        END SELECT
+9477     END IF
+9478     RETURN 
+9479  SUBEND
+9480  !
+9481 Pwracc_specs: !======================================================
+9482  !
+9483  !      OUTPUT ACCURACY and FLATNESS SPECIFICATIONS STORED HERE
+9484  !
+9485  !===================================================================
+9486  SUB Pwracc_specs(Test_mode$,Opt$,REAL Power,Start(*),Stop(*),Flat_spec(*),Acc_spec(*))
+9487  !
+9488     DIM Slp_chg(9),Hdwr_chg(9),Meas_uncert(9),Cust_flat(9),Accy(9)
+9489     INTEGER Rear,Del_atten,Spec_num
+9490  !
+9491  !...figure out 8340 options
+9492     Del_atten=NOT FNDut_has("ATTEN",Opt$)
+9493     Rear=FNDut_has("REAR OUT",Opt$)
+9494  !
+9495  !********************************************
+9496  ! FREQUENCY BANDS for power specs ------
+9497  !*******************************************
+9498  !...READ frequency data
+9499     RESTORE Spec_bands
+9500     FOR I=1 TO 3
+9501        READ Start(I),Stop(I)
+9502     NEXT I
+9503  !             [  start <=  BAND  < stop  ]
+9504  !-----------------------------------------------------
+9505  !                band A     band B      band C
+9506 Spec_bands:DATA .01,2.4  ,  2.4,20  ,  20,26.500000001
+9507  !*****************************************************
+9508  !
+9509  ! figure out which power range
+9510     SELECT Power
+9511     CASE >10
+9512        P_range=1
+9513     CASE <-10
+9514        P_range=3
+9515     CASE ELSE
+9516        P_range=2
+9517     END SELECT
+9518  !
+9519  !...RESTORE proper table of data
+9520     IF Del_atten AND NOT Rear THEN RESTORE Spec_a1_r0
+9521     IF NOT Del_atten AND NOT Rear THEN RESTORE Spec_a0_r0
+9522     IF Del_atten AND Rear THEN RESTORE Spec_a1_r1
+9523     IF NOT Del_atten AND Rear THEN RESTORE Spec_a0_r1
+9524  !
+9525  !
+9526  !
+9527  !
+9528  !********************************************
+9529  !   READ TABLE OF SPEC PARAMETERS
+9530  !********************************************
+9531 Read_em: !
+9532     FOR Row=1 TO 5
+9533        FOR I=1 TO 9
+9534           SELECT Row
+9535           CASE 1
+9536              READ Slp_chg(I)
+9537           CASE 2
+9538              READ Hdwr_chg(I)
+9539           CASE 3
+9540              READ Meas_uncert(I)
+9541           CASE 4
+9542              READ Cust_flat(I)
+9543           CASE 5
+9544              READ Accy(I)
+9545           END SELECT
+9546        NEXT I
+9547     NEXT Row
+9548 !
+9549 !***********************************************
+9550 !    CALCULATE SPECS FOR THIS MODE
+9551 !***********************************************
+9552     FOR Spec_num=1 TO 3
+9553        I=INT(Spec_num+(P_range-1)*3)
+9554        SELECT Test_mode$
+9555        CASE "FSC","FSA","FSP","FSV"!....CUSTOMER/FIELD SERVICE
+9556           Flat_spec(Spec_num)=Cust_flat(I)
+9557           Acc_spec(Spec_num)=Accy(I)
+9558  !
+9559        CASE "T00" TO "T99"!.....HEAT TESTING
+9560           Flat_spec(Spec_num)=Cust_flat(I)-Meas_uncert(I)
+9561           Acc_spec(Spec_num)=Accy(I)-Meas_uncert(I)
+9562  !
+9563        CASE "EI_"!.......EI
+9564           Flat_spec(Spec_num)=Cust_flat(I)-Meas_uncert(I)-Hdwr_chg(I)-Slp_chg(I)/2
+9565           Acc_spec(Spec_num)=Flat_spec(Spec_num)+.15
+9566 !
+9567        CASE "CF_"!....CAL/FINAL SPECS
+9568           Flat_spec(Spec_num)=Cust_flat(I)-Meas_uncert(I)-Hdwr_chg(I)-Slp_chg(I)/2
+9569           Acc_spec(Spec_num)=Flat_spec(Spec_num)+.1
+9570 !
+9571        END SELECT
+9572     NEXT Spec_num
+9573 !
+9574 Spec_a0_r0: !  ************ STANDARD UNIT ***********************
+9575 !          +20 to +10   |   +10  to -10   |   -10  to -20
+9576 !         a    b     c  |  a     b     c  |  a     b     c
+9577 !---------------------------------------------------------
+9578     DATA  9  , .22 , .26 , .12 , .13 , .16 , .3  , .72 , .76!..Slp chg w/T&P
+9579     DATA  9  , .13 , .16 ,  0  , .13 , .16 ,  0  , .13 , .16!..Hrwr chg w/T
+9580     DATA  9  , .20 , .28 , .10 , .20 , .28 , .10 , .20 , .28!.. Meas uncerty
+9581     ! Specs from Operating and Service Manual
+9582     DATA  9  , 1.2 , 1.7 , .6  , 1.1 , 1.6 , .9  , 1.6 , 2.1!.. Flatness
+9583     DATA  9  , 1.8 , 2.3 , .9  , 1.5 , 2.0 , 1.2 , 2.0 , 2.5!.. Accuracy
+9584 !
+9585 !
+9586 Spec_a1_r0: ! ************** DELETE ATTENUATOR *********************
+9587 !          +20 to +10   |   +10  to -10   |   -10  to -20
+9588 !         a    b     c  |  a     b     c  |  a     b     c
+9589 !----------------------------------------------------------
+9590     DATA  9  , .22 , .26 , .12 , .13 , .16 , .3  , .72 , .76!..Slp chg w/T&P
+9591     DATA  9  , .13 , .16 ,  0  , .13 , .16 ,  0  , .13 , .16!..Hrwr chg w/T
+9592     DATA  9  , .20 , .28 , .10 , .20 , .28 , .10 , .20 , .28!.. Meas uncerty
+9593     ! Specs from Operating and Service Manual
+9594     DATA  9  , 1   , 1.4 , .6  , .9  , 1.3 , .8  , 1.5 , 1.9!.. Flatness
+9595     DATA  9  , 1.6 , 2.0 , .9  , 1.3 , 1.7 , 1.7 , 2.1 , 2.5!.. Accuracy
+9596 !
+9597 !
+9598 Spec_a0_r1: !  *********** REAR PANEL RF OUTPUT ******************
+9599 !          +20 to +10   |   +10  to -10   |   -10  to -20
+9600 !         a    b     c  |  a     b     c  |  a     b     c
+9601 !-----------------------------------------------------------
+9602     DATA  9  , .32 , .36 , .12 , .22 , .26 , .3  , .82 , .86!..Slp chg w/T&P
+9603     DATA  9  , .13 , .16 ,  0  , .13 , .16 ,  0  , .13 , .16!.. Hrwr chg w/T
+9604     DATA  9  , .20 , .28 , .10 , .20 , .28 , .10 , .20 , .28!.. Meas uncerty
+9605     ! Specs from Operating and Service Manual
+9606     DATA  9  , 1.4 , 1.9 , .7  , 1.3 , 1.8 , 1.0 , 1.8 , 2.3!.. Flatness
+9607     DATA  9  , 2.0 , 2.5 , 1.0 , 1.7 , 2.2 , 1.3 , 2.2 , 2.7!.. Accuracy
+9608 !
+9609 Spec_a1_r1: ! ******** DELETE ATTEN / REAR PANEL RF ***************
+9610 !          +20 to +10   |   +10  to -10   |   -10  to -20
+9611 !         a    b     c  |  a     b     c  |  a     b     c
+9612 !-----------------------------------------------------------
+9613     DATA  9  , .32 , .36 , .12 , .22 , .26 , .30 , .82 , .86!  Slp chg w/T&P
+9614     DATA  9  , .13 , .16 ,  0  , .13 , .16 ,  0  , .13 , .16!.. Hrwr chg w/T
+9615     DATA  9  , .20 , .28 , .10 , .20 , .28 , .10 , .20 , .28!.. Meas uncerty
+9616     ! Specs from Operating and Service Manual
+9617     DATA  9  , 1.2 , 1.6 , .7  , 1.1 , 1.5 , .9  , 1.7 , 2.1!.. Flatness
+9618     DATA  9  , 1.8 , 2.2 , 1.0 , 1.5 , 1.9 , 1.8 , 2.3 , 2.7!.. Accuracy
+9619  !
+9620  SUBEND
+9621  !<><><><><><><><><><><><><><><><><><><><><><
+9622  !><><><><><><><><><><><><><><><><><><><><><>
+9623  !<><><><><><><><><><><><><><><><><><><><><><
+9624  SUB Pwracc_out(Model$,Ser_no$,Test_mode$,Data_dest$,Error$,OPTIONAL Rev$,P_opt$,Pwr_data(*),INTEGER Frqs,Pwrs)
+9625 Pwracc_out: ! Label for easy editing
+9626  ! *****************************************
+9627  !          OUTPUT POWER ACCURACY
+9628  !
+9629  !          data handling routine
+9630  !
+9631  !      part of # :  08340-90068
+9632  !
+9633  !      04.16.84       Mike Seibel
+9634  ! *****************************************
+9635  !
+9636     OPTION BASE 1
+9637  !
+9638  ! *****************************************
+9639  !      I N I T I A L I Z A T I O N
+9640  ! *****************************************
+9641  !
+9642     COM /Power_data/ Power_data(*),INTEGER Num_of_freqs,Num_of_pwrs,S_n,Data_mode,Revision$
+9643     COM /Peripherals/ INTEGER Print,Kbd,Crt
+9644  ! COM /F_data_tags/ S_num$,Test_name$,INTEGER Mode_parm,Num_rows
+9645  ! COM /Formatted_data/ REAL Long_r(*),INTEGER Long_i(*),REAL Short_r(*),Short$(*)
+9646     DIM Start(10),Stop(10),Flat_spec(10),Acc_spec(10),Data_rev$[50],Power(10),Freq(500)
+9647     INTEGER Freqs,Powers,First_flag,Acc_fail,Flat_fail,Error_code,Pwrptr
+9648     INTEGER File_size
+9649  !
+9650  !
+9651     SELECT NPAR
+9652     CASE 5
+9653        Get_disc_data=1
+9654     CASE >5
+9655        Get_disc_data=0
+9656        Freqs=Frqs
+9657        Ref_frqs=Rf_frqs
+9658        Powers=Pwrs
+9659        Opt$=P_opt$
+9660        Data_rev$=FNData_tag$(Rev$)
+9661        FOR I=0 TO Powers
+9662           FOR J=0 TO Freqs
+9663              Power_data(I,J)=Pwr_data(I,J)
+9664           NEXT J
+9665        NEXT I
+9666     END SELECT
+9667  !
+9668  !***********************************************
+9669  !************** STORE DATA *********************
+9670  !***********************************************
+9671 Store_it: !
+9672     IF Data_dest$="STORE" THEN 
+9673      !...PACK ALL POWERS INTO INTEGERS; [.01 dB]
+9674      !        { 10.7695 db becomes 1077 }
+9675      !
+9676        ALLOCATE INTEGER Pwr_dat_int(0:Pwrs,0:Freqs)
+9677        FOR I=1 TO Pwrs
+9678           FOR J=0 TO Freqs
+9679              IF Pwr_data(I,J)>-9990 THEN 
+9680                 Pwr_dat_int(I,J)=INT(100*FNPround(Pwr_data(I,J),-2))
+9681              ELSE
+9682                 Pwr_dat_int(I,J)=-9999
+9683              END IF
+9684           NEXT J
+9685        NEXT I
+9686        FOR J=1 TO Freqs
+9687           Pwr_dat_int(0,J)=INT(1000*FNPround(Pwr_data(0,J),-3)+.5)
+9688        NEXT J
+9689        File_size=INT((2*(Powers+1)*(Freqs+1)+4+25)/256+1)
+9690        Prep_data_file(@Data,Model$,Test_mode$,"Pwracc",Ser_no$,File_size)
+9691        OUTPUT @Data;FNData_tag$(Rev$[1,1]),P_opt$,Powers,Freqs,Pwr_dat_int(*)
+9692        ASSIGN @Data TO *
+9693        SUBEXIT
+9694     END IF
+9695  !
+9696  !***********************************************
+9697  !*********** load data from disc file **********
+9698  !***********************************************
+9699 Load_data: !
+9700     IF Get_disc_data THEN 
+9701        Get_pwr_data(Model$,Ser_no$,Test_mode$,Data_rev$,Opt$,Error_code)
+9702        IF Error_code=1 THEN 
+9703           Error$=Data_rev$[1,1]
+9704           SUBEXIT
+9705        END IF
+9706        Freqs=Num_of_freqs
+9707        Powers=Num_of_pwrs
+9708     END IF
+9709  !
+9710  !************************************************
+9711  !****** PUT DATA IN COMMON FORMAT ***************
+9712 Pack_common: !************************************
+9713  !
+9714     IF Data_dest$="COMMON" THEN 
+9715   !  Long_r(*)  : contains power accuracy in [dBm]
+9716   !  Long_i(*,1): contains programmed power in [dBm/100]
+9717   !  Long_i(*,2): contains frequency in [MHz]
+9718   !
+9719   !  Row=1
+9720   !  FOR Pwrptr=1 TO Powers
+9721   !    FOR Frqptr=1 TO Freqs
+9722   !      Long_r(Row)=Power_data(Pwrptr,Frqptr)
+9723   !      Long_i(Row,1)=INT(Power_data(Pwrptr,0)*100)
+9724   !      Long_i(Row,2)=INT(Freq(Frqptr)*1000)
+9725   !      Row=Row+1
+9726   !    NEXT Frqptr
+9727   !  NEXT Pwrptr
+9728   !  S_num$=Ser_no$
+9729   !  Test_name$="Pwracc"
+9730   !  Mode_parm=Mode
+9731   !  Num_rows=Row-1
+9732        SUBEXIT
+9733     END IF
+9734  !
+9735  !************************************************
+9736  !**********  PRINT OUT DATA  ********************
+9737  !************************************************
+9738 Print_out: !
+9739     SELECT Data_dest$
+9740     CASE "DISPLAY"
+9741        PRINTER IS Crt
+9742     CASE "PRINT"
+9743        PRINTER IS Print
+9744     CASE ELSE
+9745        SUBEXIT
+9746     END SELECT
+9747     Clr_scr
+9748     Top_of_page
+9749     First_freq=Power_data(0,1)
+9750     Last_freq=Power_data(0,Freqs)
+9751     FOR Pwrptr=1 TO Powers
+9752        Power_level=Power_data(Pwrptr,0)
+9753        IF Power_level<-9000 THEN Next_pwr
+9754        FOR Plot_num=1 TO 2
+9755           Acc_fail=0
+9756           Flat_fail=0
+9757           SELECT Plot_num
+9758           CASE 1
+9759              X1=.01
+9760              X2=3
+9761              IF First_freq>X2 THEN Next_plot
+9762           CASE 2
+9763              X1=2.4
+9764              X2=26.5
+9765              IF Last_freq<X1 THEN Next_plot
+9766           END SELECT
+9767           IF First_freq>X1 THEN X1=First_freq
+9768           IF Last_freq<X2 THEN X2=Last_freq
+9769           Pwr_plot(Ser_no$,Opt$,Data_rev$,Power_data(*),X1,X2,Test_mode$,Pwrptr,Freqs,Acc_fail,Flat_fail,0)
+9770           OFF KEY 
+9771           SELECT Data_dest$
+9772           CASE "DISPLAY"
+9773              ON KEY 5 LABEL "Next" GOTO Next_plot
+9774              ON KEY 9 LABEL "ABORT" GOTO Done
+9775              BEEP 400,.1
+9776              LOOP
+9777              END LOOP
+9778           CASE "PRINT"
+9779              IF Print<>1 THEN DUMP GRAPHICS
+9780           END SELECT
+9781 Next_plot:  !
+9782           OFF KEY 0
+9783           ON KEY 9 LABEL "ABORT" GOTO Done
+9784        NEXT Plot_num
+9785        IF Plot_num>2 AND (Plot_num/2)>INT(Plot_num/2) THEN 
+9786           Clr_scr
+9787           Top_of_page
+9788        END IF
+9789 Next_pwr:   !
+9790     NEXT Pwrptr
+9791  !
+9792 Done:GRAPHICS OFF
+9793     PRINTER IS Crt
+9794     ALPHA ON
+9795     SUBEXIT
+9796  !
+9797  !
+9798     OFF KEY 
+9799     PRINTER IS Crt
+9800     GRAPHICS OFF
+9801     ALPHA ON
+9802  SUBEND
+9803  !
+9804 Pwracc_hookup:SUB Pwracc_hookup
+9805     GINIT
+9806     VIEWPORT 0,120,0,100
+9807     WINDOW 0,135,0,100
+9808     GRAPHICS ON
+9809     OFF KEY 
+9810     Box(69,39,5,15)
+9811     Label("POWER METER",107,78,5,.6,0)
+9812     Label("DUT",42,78,5,.6,0)
+9813     Label("POWERSENSOR",53,40,5,.6,0)
+9814     Label("HP436A",109.25,70,5,.6,0)
+9815     Label("*** OUTPUT POWER ACCURACY SETUP ***",67,93.5,4.75,.6,0)
+9816     Connect(69,31.25,87.5,25.25,0)
+9817     Connect(87.5,50.3,87.5,25.5,1)
+9818     Connect(69,49,69,46.5,1)
+9819     F436(38,-13,-3,0)
+9820     Dut(-34,6,-21,-19)
+9821     Label("CALIBRATE THEPOWER METER PERTHE HP 436AMANUAL'SINSTRUCTIONS!",110,40,4,.6,0)
+9822     BEEP 2000,.1
+9823     Wait_for_cont
+9824     OFF KEY 
+9825     DISP 
+9826  SUBEND
+9827!*********************************************
+9828!*********************************************
+9829 F436:SUB F436(Xpos,Ypos,Sizex,Sizey)
+9830     GRAPHICS ON
+9831     WINDOW -Xpos+Sizex,133.41-Xpos-Sizex,-Ypos+Sizey,100-Ypos-Sizey
+9832     Box(69,74,49,27)
+9833     Box(69,81,47,12)
+9834     Box(52,72,1,1)
+9835     Box(56,72,1,1)
+9836     Box(60,72,1,1)
+9837     Box(67,72,1,1)
+9838     Box(77,72,1,1)
+9839     Box(86,72,1,1)
+9840     Box(55,81,9,5)
+9841     Connect(55,79.25,57,82,1)
+9842     Circle(67.25,65.5,2,0,360)
+9843     Circle(67.25,65.5,.75,0,360)
+9844     Circle(86.5,65.75,1.75,0,360)
+9845     Circle(49.25,65.25,2,0,360)
+9846     WINDOW 0,133.4,0,100
+9847  SUBEND
+9848!
+9849!*********************************************
+9850!*********************************************
+9851 Dut:SUB Dut(Xpos,Ypos,Sizex,Sizey)
+9852     GRAPHICS ON
+9853     WINDOW -Xpos+Sizex,133.41-Xpos-Sizex,-Ypos+Sizey,100-Ypos-Sizey
+9854     Box(67,59,87,36)
+9855     Box(67,71,80,8)
+9856     Circle(37,46,2.25,0,360)
+9857     Circle(52.75,46,2.25,0,360)
+9858     Circle(60.25,46,2.25,0,360)
+9859     Circle(66.5,46,2.25,0,360)
+9860     Circle(102.5,46,3,0,360)
+9861     Circle(72,57.25,4.5,0,360)
+9862     WINDOW 0,133.4,0,100
+9863  SUBEND
+9864  !
+9865  !
+9866  SUB Pwracc_parms(Rev$,Opt$,Power(*),Freq(*),INTEGER Pwrs,Frqs)
+9867 Pwracc_parms:!-------------------------------
+9868  !
+9869  !  OUTPUT POWER ACCURACY TEST PARAMETERS
+9870  !
+9871  !-------------------------------------------
+9872     INTEGER Rear,Del_atten
+9873     Rear=FNDut_has("REAR OUT",Opt$)
+9874     Del_atten=NOT FNDut_has("ATTEN",Opt$)
+9875  !
+9876  !
+9877  !.....LOAD LIST OF TEST FREQS
+9878     SELECT Rev$
+9879     CASE "a","b","A"
+9880        IF FNDut_has("BAND 4",Opt$) THEN 
+9881           GOSUB Freq_list_1
+9882        ELSE
+9883           GOSUB Short_list_1
+9884        END IF
+9885     CASE ELSE
+9886        GOTO Huh
+9887     END SELECT
+9888  !
+9889  !....LOAD LIST OF POWERS
+9890     SELECT Rev$
+9891     CASE "a","b","A"
+9892        SELECT 1
+9893        CASE FNDut_has("H02")
+9894 Pwr_h02:  DATA 0,-10,-999
+9895           RESTORE Pwr_h02
+9896        CASE FNDut_has("GOOD HARMON")   ! Note: This check must be AFTER
+9897           RESTORE Pwr_003              !       check for H02
+9898 Pwr_003:  DATA 7,0,-10,-999
+9899        CASE NOT Rear AND NOT Del_atten
+9900 Pwr_1:    DATA 9,0,-10,-999
+9901           RESTORE Pwr_1
+9902  !
+9903        CASE NOT Rear AND Del_atten
+9904 Pwr_2:    DATA 10,0,-20,-999
+9905           RESTORE Pwr_2
+9906  !
+9907        CASE Rear AND NOT Del_atten
+9908 Pwr_3:    DATA 7,-1,-10,-999
+9909           RESTORE Pwr_3
+9910  !
+9911        CASE Rear AND Del_atten
+9912 Pwr_4:    DATA 9,0,-20,-999
+9913           RESTORE Pwr_4
+9914  !
+9915        CASE ELSE
+9916           GOTO Huh
+9917        END SELECT
+9918     END SELECT
+9919  !
+9920 Read_powers: !
+9921     Pwrs=0
+9922     REPEAT
+9923        Pwrs=Pwrs+1
+9924        READ Power(Pwrs)
+9925     UNTIL Power(Pwrs)=-999
+9926     Pwrs=Pwrs-1
+9927  !**********************************************************
+9928     SUBEXIT
+9929  !**********************************************************
+9930  !
+9931 Huh: !
+9932     PRINT "REVISION IS UNKNOWN TO Pwracc_parms !!!!"
+9933     BEEP 
+9934     Wait_for_cont
+9935     SUBEXIT
+9936  !
+9937 Freq_list_1: !------------------- Frequencies to measure at :
+9938     RESTORE Freq_list_1
+9939     Frqs=0
+9940     REPEAT
+9941        Frqs=Frqs+1
+9942        READ Freq(Frqs)
+9943     UNTIL Freq(Frqs)=-999
+9944  !
+9945  ! low band data points
+9946  !
+9947     DATA .01,.05,.1,.15,.2,.25,.3,.35,.4,.45,.5,.55,.6,.65,.7,.75,.8,.85,.9,.95,1,1.05,1.1,1.15,1.2,1.25,1.3,1.35,1.4,1.45,1.5,1.55,1.6,1.65
+9948     DATA 1.7,1.75,1.8,1.85,1.9,1.95,2,2.05,2.1,2.15,2.2,2.25,2.3,2.35,2.399,-999
+9949  !
+9950  !
+9951  !  150 MHz steps for the others
+9952  !
+9953     FOR Ghz=2.4 TO 26.501 STEP .15
+9954        Freq(Frqs)=Ghz
+9955        Frqs=Frqs+1
+9956     NEXT Ghz
+9957     IF 26.5-Freq(Frqs-1)>.0001 THEN 
+9958        Freq(Frqs)=26.5
+9959     ELSE
+9960        Frqs=Frqs-1
+9961     END IF
+9962     RETURN 
+9963 !
+9964 !
+9965 Short_list_1: !------------------- Frequencies to measure at :
+9966     RESTORE Short_list_1
+9967     Frqs=0
+9968     REPEAT
+9969        Frqs=Frqs+1
+9970        READ Freq(Frqs)
+9971     UNTIL Freq(Frqs)=-999
+9972  !
+9973  ! low band data points
+9974  !
+9975     DATA .01,.05,.1,.15,.2,.25,.3,.35,.4,.45,.5,.55,.6,.65,.7,.75,.8,.85,.9,.95,1,1.05,1.1,1.15,1.2,1.25,1.3,1.35,1.4,1.45,1.5,1.55,1.6,1.65
+9976     DATA 1.7,1.75,1.8,1.85,1.9,1.95,2,2.05,2.1,2.15,2.2,2.25,2.3,2.35,2.399,-999
+9977  !
+9978  !
+9979  !  150 MHz steps for the others
+9980  !
+9981     FOR Ghz=2.4 TO 20.001 STEP .15
+9982        Freq(Frqs)=Ghz
+9983        Frqs=Frqs+1
+9984     NEXT Ghz
+9985     IF 20-Freq(Frqs-1)>.0001 THEN 
+9986        Freq(Frqs)=20
+9987     ELSE
+9988        Frqs=Frqs-1
+9989     END IF
+9990     RETURN 
+9991  SUBEND
+9992  !************************************************************************
+9993  !************************************************************************
+9994 Pwr_mtr:DEF FNPwr_mtr(Freq,Cal_factors(*),OPTIONAL Old_range)
+9995  !*** Added Old_range to prevent insufficient settling time if
+9996  !*** range changes during frequency stepping.  ...md
+9997     COM /Hpib_codes/ @Dut,@Sa,@Sb,@Co,@Pwr_mtr,@Dvm,@Fgn,@Rfgn,@Het,@Mod,@Atn
+9998     COM /Hpib_codes/ @Timer,@D13,@D14,@D15,@D16
+9999 Read_meter:   !
+10000    OUTPUT @Pwr_mtr;"DI"
+10001    ENTER @Pwr_mtr USING "X,B";Range_1
+10002    IF NPAR=3 THEN 
+10003       IF Old_range<>Range_1 THEN WAIT (Range_1<75)*8
+10004    END IF
+10005    OUTPUT @Pwr_mtr;"T"
+10006    ENTER @Pwr_mtr;Pwr
+10007    OUTPUT @Pwr_mtr;"I"
+10008    ENTER @Pwr_mtr USING "X,B";Range_2
+10009    IF ABS(Range_1-Range_2)>.01 THEN 
+10010       DISP "436 meter changed ranges..."
+10011       FOR I=1 TO 2
+10012          WAIT (Range_2<75)*4
+10013          OUTPUT @Pwr_mtr;"T"
+10014          ENTER @Pwr_mtr;Junk
+10015       NEXT I
+10016       DISP 
+10017       GOTO Read_meter
+10018    END IF
+10019    GOSUB Calc_cal_factor
+10020    IF NPAR=3 THEN Old_range=Range_2
+10021    RETURN Pwr-Correction
+10022 !
+10023 !----------------------------------------
+10024 !     CALCULATE CAL FACTOR CORRECTION
+10025 !----------------------------------------
+10026 Calc_cal_factor:!
+10027    Cal_no=0
+10028    REPEAT
+10029       Cal_no=Cal_no+1
+10030    UNTIL Freq<Cal_factors(Cal_no,1) OR Cal_no=34
+10031    IF Cal_no=1 AND Freq<.01 THEN 
+10032       Correction=0
+10033       BEEP 
+10034       DISP "Frequency is less than .01 GHz in FNPwr_mtr !!!!"
+10035       WAIT 1
+10036       DISP 
+10037       RETURN 
+10038    END IF
+10039    Num=Cal_factors(Cal_no,2)-Cal_factors(Cal_no-1,2)
+10040    Denom=Cal_factors(Cal_no,1)-Cal_factors(Cal_no-1,1)
+10041    Slope=Num/Denom
+10042    Cal=Slope*(Freq-Cal_factors(Cal_no-1,1))+Cal_factors(Cal_no-1,2)
+10043    Correction=10*LGT(Cal/100)
+10044    RETURN 
+10045 !
+10046 FNEND
+10047 !*************************************************************************
+10048 Pwr_plot:!****************************************************************
+10049 !*************************************************************************
+10050 SUB Pwr_plot(Ser_no$,Opt$,Rev$,Power_data(*),Fstart,Fstop,Test_mode$,INTEGER Pwrptr,Freqs,Acc_fail,Flat_fail,Slope)
+10051    Slope_spec=.015!....dB/GHz   before message appears on CRT
+10052    DIM Start(10),Stop(10),Flat_spec(10),Acc_spec(10),Ref_pwr(10)
+10053    DIM Max_flat(10),Min_flat(10)
+10054    IF Slope THEN 
+10055       Power_level=0
+10056    ELSE
+10057       Power_level=Power_data(Pwrptr,0)
+10058    END IF
+10059    Pwracc_specs(Test_mode$,Opt$,Power_level,Start(*),Stop(*),Flat_spec(*),Acc_spec(*))
+10060    Acc_fail=-1
+10061    Flat_fail=-1
+10062    Startf=Fstart
+10063    Stopf=Fstop
+10064    First_freq=Power_data(0,1)
+10065    Last_freq=Power_data(0,Freqs)
+10066    IF Power_level<-9000 THEN SUBEXIT
+10067    IF First_freq>Stopf THEN SUBEXIT
+10068    IF Last_freq<Startf THEN SUBEXIT
+10069    IF First_freq>Startf THEN Startf=First_freq
+10070    IF Last_freq<Stopf THEN Stopf=Last_freq
+10071    Pwracc_specs(Test_mode$,Opt$,Power_level,Start(*),Stop(*),Flat_spec(*),Acc_spec(*))
+10072    IF Slope THEN 
+10073       Y2=Power_level+1
+10074       Y1=Power_level-1
+10075    ELSE
+10076       Y2=Power_level+.5*(INT(Acc_spec(3)/.5)+2)
+10077       Y1=Power_level-.5*(INT(Acc_spec(3)/.5)+2)
+10078    END IF
+10079    Setup_plot(Startf,Stopf,Y1,Y2)
+10080    CLIP Startf,Stopf,Y1,Y2
+10081    LINE TYPE 1
+10082    First_flag=0
+10083 !
+10084 !
+10085 !.........graph data, find maximum and minimum flatness points
+10086    FOR I=1 TO 3
+10087       Min_flat(I)=999
+10088       Max_flat(I)=-999
+10089    NEXT I
+10090    FOR I=1 TO Freqs
+10091       Pwr=Power_data(Pwrptr,I)
+10092       Freq=Power_data(0,I)
+10093       IF Pwr>-100 THEN 
+10094          FOR X=1 TO 3
+10095             IF Freq+.000000001>=Start(X) AND Freq<Stop(X) THEN 
+10096                IF Pwr>Max_flat(X) THEN Max_flat(X)=Pwr
+10097                IF Pwr<Min_flat(X) THEN Min_flat(X)=Pwr
+10098             END IF
+10099          NEXT X
+10100          IF Freq+.0001>=Startf AND Freq-.0001<Stopf THEN 
+10101             IF NOT First_flag THEN 
+10102                MOVE Freq,Pwr
+10103                First_flag=1
+10104             ELSE
+10105                DRAW Freq,Pwr
+10106             END IF
+10107          END IF
+10108       END IF
+10109    NEXT I
+10110 !
+10111    IF Min_flat(3)>900 THEN 
+10112       Min_flat(3)=Min_flat(2)
+10113       Max_flat(3)=Max_flat(2)
+10114    END IF
+10115 !
+10116    IF Slope THEN !....calculate slope
+10117       Sumx=0
+10118       Sumxy=0
+10119       Sumy=0
+10120       Sumxx=0
+10121       Pts=0
+10122       FOR I=1 TO Freqs
+10123          Pwr=Power_data(Pwrptr,I)
+10124          Freq=Power_data(0,I)
+10125          IF Freq+.00000000001>2.4 AND Freq<Stopf AND Pwr>-900 THEN 
+10126             Sumx=Sumx+Freq
+10127             Sumxy=Sumxy+Freq*Pwr
+10128             Sumy=Sumy+Pwr
+10129             Sumxx=Sumxx+Freq*Freq
+10130             Pts=Pts+1
+10131          END IF
+10132       NEXT I
+10133       Pwr_slope=(Sumxy-Sumx*Sumy/Pts)/(Sumxx-Sumx*Sumx/Pts)
+10134    ELSE!....... draw spec lines
+10135       FOR X=1 TO 3
+10136          SELECT X
+10137          CASE 1
+10138             Ref_pwr(X)=(Max_flat(X)+Min_flat(X))/2
+10139          CASE 2,3
+10140             IF Flat_spec(2)-Max_flat(2)>Flat_spec(3)-Max_flat(3) THEN 
+10141                Upper_space=(Flat_spec(3)+Power_level)-Max_flat(3)
+10142             ELSE
+10143                Upper_space=(Flat_spec(2)+Power_level)-Max_flat(2)
+10144             END IF
+10145             IF Min_flat(2)+Flat_spec(2)>Min_flat(3)+Flat_spec(3) THEN 
+10146                Lower_space=Min_flat(3)-(Power_level-Flat_spec(3))
+10147             ELSE
+10148                Lower_space=Min_flat(2)-(Power_level-Flat_spec(2))
+10149             END IF
+10150             Ref_pwr(X)=Power_level-Upper_space/2+Lower_space/2
+10151          END SELECT
+10152       NEXT X
+10153       FOR X=1 TO 3
+10154          LINE TYPE 1
+10155          MOVE Start(X),Acc_spec(X)+Power_level
+10156          DRAW Stop(X),Acc_spec(X)+Power_level
+10157          MOVE Start(X),-Acc_spec(X)+Power_level
+10158          DRAW Stop(X),-Acc_spec(X)+Power_level
+10159          LINE TYPE 4,15
+10160          MOVE Start(X),Flat_spec(X)+Ref_pwr(X)
+10161          DRAW Stop(X),Flat_spec(X)+Ref_pwr(X)
+10162          MOVE Start(X),-Flat_spec(X)+Ref_pwr(X)
+10163          DRAW Stop(X),-Flat_spec(X)+Ref_pwr(X)
+10164       NEXT X
+10165 !
+10166 !
+10167 ! ....... spec the data
+10168       FOR I=1 TO Freqs
+10169          Pwr=Power_data(Pwrptr,I)
+10170          Freq=Power_data(0,I)
+10171          IF Freq+.000000001>=Fstart AND Freq-.000000001<=Fstop AND Pwr>-100 THEN 
+10172             FOR X=1 TO 3
+10173                IF Freq+.000000001>=Start(X) AND Freq<Stop(X) THEN 
+10174                   IF ABS(Pwr-Power_level)>Acc_spec(X) THEN Acc_fail=1
+10175                   IF ABS(Pwr-Ref_pwr(X))>Flat_spec(X) THEN Flat_fail=1
+10176                END IF
+10177             NEXT X
+10178          END IF
+10179       NEXT I
+10180       IF Acc_fail=-1 THEN Acc_fail=0
+10181       IF Flat_fail=-1 THEN Flat_fail=0
+10182    END IF
+10183 !
+10184 !
+10185 !
+10186 Label_graph:!*******************************************************
+10187    LINE TYPE 1
+10188    CLIP OFF
+10189    VIEWPORT 20,120,85,95
+10190    WINDOW 0,100,0,100
+10191    LORG 6
+10192    CSIZE 6,.4
+10193    MOVE 50,100
+10194    SELECT Test_mode$
+10195    CASE "CF_","FSC","FSA","FSP","FSV"
+10196       LABEL "OUTPUT POWER ACCURACY   S/N "&Ser_no$
+10197    CASE "EI_"
+10198       LABEL "EI POWER ACCURACY   S/N "&Ser_no$
+10199    CASE "T00" TO "T99"
+10200       Temp$=Test_mode$[2]
+10201       IF Slope THEN 
+10202          LABEL "DELTA POWER from 25 deg TO "&Temp$&"deg  S/N "&Ser_no$
+10203       ELSE
+10204          LABEL "POWER ACCURACY @ "&Temp$&"deg  S/N "&Ser_no$
+10205       END IF
+10206    END SELECT
+10207    CSIZE 4
+10208    MOVE 50,25
+10209    LORG 5
+10210    LABEL "revision : "&Rev$
+10211    VIEWPORT 20,120,80,85
+10212    WINDOW 0,100,0,100
+10213    FRAME
+10214    IF Slope THEN 
+10215       CSIZE 4
+10216       LORG 5
+10217       MOVE 50,50
+10218       LABEL USING "K,SDD.3D,K,.DDD,K";"slope : ",Pwr_slope,"  dB/GHz   [typically < ",Slope_spec,"]"
+10219       IF ABS(Pwr_slope)>Slope_spec THEN 
+10220          VIEWPORT 20,120,20,90
+10221          LORG 6
+10222          WINDOW 0,100,0,100
+10223          MOVE 50,30
+10224          LABEL "*****************************"
+10225          LABEL "* CHECK SLOPE THERMISTOR ON *"
+10226          LABEL "* THE LEVEL CONTROL BOARD.  *"
+10227          LABEL "*****************************"
+10228       END IF
+10229    ELSE
+10230       CSIZE 3.3
+10231       LORG 2
+10232       MOVE 4,50
+10233       LABEL "ACCURACY: "
+10234       MOVE 54,50
+10235       LABEL "FLATNESS: "
+10236       CSIZE 3.7
+10237       MOVE 35,50
+10238       IF Acc_fail THEN 
+10239          Acc_result$="FAILED"
+10240       ELSE
+10241          Acc_result$="PASSED"
+10242       END IF
+10243       IF Flat_fail THEN 
+10244          Flat_result$="FAILED"
+10245       ELSE
+10246          Flat_result$="PASSED"
+10247       END IF
+10248       LABEL Acc_result$
+10249       MOVE 85,50
+10250       LABEL Flat_result$
+10251       LINE TYPE 1
+10252       MOVE 50,0
+10253       DRAW 50,100
+10254       MOVE 23,50
+10255       DRAW 32,50
+10256       LINE TYPE 4,15
+10257       MOVE 73,50
+10258       DRAW 82,50
+10259    END IF
+10260 SUBEND
+10261 Setup_plot:SUB Setup_plot(X1,X2,Y1,Y2)
+10262 ! *****************************************
+10263 !       sets up graph on 9826 CRT
+10264 ! *****************************************
+10265 !
+10266 !  OFF KEY
+10267    Clr_scr
+10268    DEG
+10269    GINIT
+10270    GRAPHICS ON
+10271    ALPHA OFF
+10272    PEN 1
+10273    VIEWPORT 20,120,20,80
+10274    WINDOW X1,X2,Y1,Y2
+10275    Y_mid=(Y2+Y1)/2
+10276    X_mid=(X2+X1)/2
+10277    Y_tic=.5
+10278    AXES 0,Y_tic,X1,Y1
+10279    AXES 0,0,X2,Y2
+10280    CLIP OFF
+10281    LINE TYPE 1
+10282 !
+10283 !------------------------------------
+10284 !  Y AXIS LABELING
+10285 !------------------------------------
+10286    Y_pos=0
+10287    LORG 8
+10288    CSIZE 4
+10289    LOOP
+10290       Top_lbl=Y_mid+Y_pos*Y_tic
+10291       Bot_lbl=Y_mid-Y_pos*Y_tic
+10292    EXIT IF Top_lbl>Y2 OR Bot_lbl<Y1
+10293       MOVE X1,Top_lbl
+10294       LABEL USING "SDD.D";Top_lbl
+10295       MOVE X1,Bot_lbl
+10296       LABEL USING "SDD.D";Bot_lbl
+10297       Y_pos=Y_pos+2
+10298    END LOOP
+10299    LDIR 90
+10300    LORG 6
+10301    MOVE X1-(X2-X1)/6,(Y2+Y1)/2
+10302    CSIZE 5
+10303    LABEL "Power [dBm]"
+10304 !
+10305 !------------------------------------------
+10306 !           LABEL X AXIS
+10307 !------------------------------------------
+10308    LDIR 0
+10309    Width=X2-X1
+10310    Ten_pwr=INT((LGT(Width)))
+10311    Mantissa=Width/(10^Ten_pwr)
+10312    Tic_spacing=1
+10313    IF Mantissa<5 THEN Tic_spacing=.5
+10314    IF Mantissa<3 THEN Tic_spacing=.2
+10315    Tic_spacing=Tic_spacing*10^Ten_pwr
+10316    Tic_origin=Tic_spacing*INT(X1/Tic_spacing)
+10317    Tic_format$="K"
+10318    CLIP ON
+10319    LINE TYPE 3
+10320    GRID Tic_spacing,Y_tic,Tic_origin+Tic_spacing,Y_mid
+10321    LINE TYPE 1
+10322 !
+10323 !
+10324 !--------------------------------------
+10325 ! START  X AXIS TICKING AND LABELING
+10326 !--------------------------------------
+10327 !
+10328    Labelflag=1
+10329    Tic=Tic_origin
+10330    LORG 6
+10331    CSIZE 4
+10332    CLIP OFF
+10333    REPEAT
+10334       MOVE Tic,Y1
+10335       IF Tic>=X1 THEN 
+10336          IPLOT 0,(Y2-Y1)/50,-1
+10337          SELECT Labelflag
+10338 Yes:     CASE =1
+10339             MOVE Tic,Y1
+10340             LABEL USING Tic_format$;Tic
+10341             Labelflag=0
+10342 No:      CASE =0
+10343             Labelflag=1
+10344          END SELECT
+10345       END IF
+10346       Tic=Tic+Tic_spacing
+10347    UNTIL Tic>=X2
+10348    MOVE (X2+X1)/2,Y1-(Y2-Y1)/9
+10349    LORG 5
+10350    CSIZE 5
+10351    LABEL "Freq [GHz]"
+10352 !------------------------------------------
+10353 SUBEND
+10354 !
+10355 !
+10356 !*******************************************
+10357 !*******************************************
+10358 DEF FNPround(Arg,Pwr)
+10359    X=INT(Arg*10^(-Pwr)+.5)*10^Pwr
+10360    RETURN X
+10361 FNEND
+10362 SUB Pwr_mtr_settled(@Pwr_mtr)
+10363 Pwr_mtr_settled:!
+10364 !=============================================================
+10365 !  This routine waits until the power meter reading is
+10366 !  stable to within 4 counts for 10 consecutive readings.
+10367 !=============================================================
+10368 !
+10369    INTEGER Give_up,Settled
+10370    DISP "WAITING FOR POWER METER TO SETTLE";
+10371    OUTPUT @Pwr_mtr;"9A+T"
+10372    LOOP
+10373       Give_up=Give_up+1
+10374       DISP ".";
+10375       OUTPUT @Pwr_mtr;"T"
+10376       ENTER @Pwr_mtr USING "3X,4D.";Reading
+10377       IF ABS(Reading-Last)<4 THEN 
+10378          Settled=Settled+1
+10379       ELSE
+10380          Settled=0
+10381          Last=Reading
+10382       END IF
+10383    EXIT IF Settled>10 OR Give_up>100
+10384    END LOOP
+10385    DISP 
+10386 SUBEND
+10387 SUB Pwracc_smy(Model$,Ser_no$,Test_mode$,Data_dest$,Error$)
+10388 Pwracc_smy:!********************************************************
+10389    COM /Power_data/ Power_data(*),INTEGER Num_of_freqs,Num_of_pwrs,S_n,Data_mode,Revision$
+10390    COM /Peripherals/ INTEGER Print,Kbd,Crt
+10391    INTEGER Error_code,Temperature,Pwrptr,Acc_fail,Flat_fail
+10392    DIM Data_rev$[50]
+10393    !
+10394    ! ....print individual temperatures
+10395    FOR Temperature=0 TO 55 STEP 5
+10396       Temp$=VAL$(Temperature)
+10397       IF LEN(Temp$)=1 THEN Temp$="0"&Temp$
+10398       Mode$="T"&Temp$
+10399       Pwracc_out(Model$,Ser_no$,Mode$,Data_dest$,Error$)
+10400    NEXT Temperature
+10401    !
+10402    ! ......get 25 degree data
+10403    DISP "getting 25 DEGREE chamber data....."
+10404    Get_pwr_data(Model$,Ser_no$,"T25",Data_rev$,Opt$,Error_code)
+10405    IF Error_code=1 THEN 
+10406       DISP "NO 25 DEGREE TEMPERATURE DATA FOR : "&Ser_no$
+10407       Error$="?"
+10408       RETURN 
+10409    END IF
+10410    ALLOCATE Chamb_ref(0:Num_of_pwrs,0:Num_of_freqs)
+10411    FOR I=0 TO Num_of_pwrs
+10412       FOR J=0 TO Num_of_freqs
+10413          Chamb_ref(I,J)=Power_data(I,J)
+10414       NEXT J
+10415    NEXT I
+10416    !
+10417    !
+10418    !...... print individual temperature deltas
+10419    FOR Temperature=0 TO 55 STEP 5
+10420       IF Temperature<>25 THEN 
+10421          Temp$=VAL$(Temperature)
+10422          IF LEN(Temp$)=1 THEN Temp$="0"&Temp$
+10423          Mode$="T"&Temp$
+10424          DISP "LOADING DATA......"
+10425          Get_pwr_data(Model$,Ser_no$,Mode$,Data_rev$,Opt$,Error_code)
+10426          IF Error_code<>1 THEN 
+10427             FOR I=1 TO Num_of_pwrs
+10428                FOR J=1 TO Num_of_freqs
+10429                   Power_data(I,J)=Power_data(I,J)-Chamb_ref(I,J)
+10430                NEXT J
+10431             NEXT I
+10432             DISP 
+10433             Closest_to_zero=9999
+10434             FOR I=1 TO Num_of_pwrs
+10435                IF ABS(Power_data(I,0))<Closest_to_zero THEN 
+10436                   Closest_to_zero=ABS(Power_data(I,0))
+10437                   Pwrptr=I
+10438                END IF
+10439             NEXT I
+10440             Pwr_plot(Ser_no$,Opt$,Data_rev$,Power_data(*),.01,26.5,Mode$,Pwrptr,Num_of_freqs,Acc_fail,Flat_fail,1)
+10441             SELECT Data_dest$
+10442             CASE "DISPLAY"
+10443                OFF KEY 
+10444                ON KEY 5 LABEL "NEXT" GOTO Next_one
+10445                ON KEY 9 LABEL "ABORT" GOTO Sb_exit
+10446                BEEP 300,.1
+10447                LOOP
+10448                END LOOP
+10449 Next_one:!
+10450                OFF KEY 
+10451                GRAPHICS OFF
+10452             CASE "PRINT"
+10453                IF Print<>1 THEN DUMP GRAPHICS
+10454             END SELECT
+10455          END IF
+10456       END IF
+10457    NEXT Temperature
+10458 Sb_exit:!
+10459 SUBEND

@@ -1,0 +1,2789 @@
+1     !**************************************************
+2     !*                                                *
+3     !*  Copyright (C) Hewlett-Packard Co. 1982,1987   *
+4     !*                                                *
+5     !**************************************************
+6 Secure_1_start:!   ***  Secure from Secure_1_start to Secure_1_end ***
+7     !  'FS_MANAGER'
+8     !     A menuing system.
+9     !
+10    !  Hewlett Packard
+11    !  Network Measurements Division
+12    !  1400 Fountaingrove Parkway
+13    !  Santa Rosa, California  95401
+14    !
+15    !
+16    !
+17    !  CUSTOM MODULES MODIFIED FOR FIELD SERVICE  03.25.87 DG
+18    !
+19    !  REN 1,1 and INDENT 5,3
+20    !
+21    !  Used in Rev A.03.00 of the Atten Cal/Op Ver Software P/N 08340-10009
+22    !
+23    !  Used in Rev A.01.00 of the Performance Test Software P/N 08340-10010
+24    !************************************************************************!
+25    !
+26  COM /Mass_storage/ Manager_sys$[85],Menu_storage$[85]
+27  COM /Mass_storage/ Dir_pointer$[85],Msus$[50]
+28  COM /Software_rev/ Performance_rev$[7],Op_ver_rev$[7]
+29    !
+30    !  Manager_sys$      Directory pointer / Volume label for Test System
+31    !                    program files and Cal Factor files.
+32    !
+33    !  Menu_storage$     Director pointer / Volume label for Menu files.
+34    !
+35    !  Dir_pointer$      Directory pointer / Volume label for Subsystem data.
+36    !
+37    !  Msus$             Mass storage unit specifer for Test System program
+38    !                    files, Menu files, and Cal Factor Files.
+39    !
+40    !  Performance_rev$  Revision Code for the Performance Test Software
+41    !  Op_ver_rev$       Revision Code for the Attenuator Calibration and
+42    !                    Operation Verification Test Software
+43    !
+44    !*********************************************************************!
+45    !
+46  Performance_rev$="A.01.00"
+47  Op_ver_rev$="A.03.00"
+48    !
+49    !*********************************************************************!
+50  INTEGER Stack_pointer,Stack_size
+51  Stack_size=10
+52  Stack_pointer=0
+53  ALLOCATE INTEGER Length_stack(1:Stack_size)
+54  ALLOCATE INTEGER Line_stack(1:Stack_size)
+55    !
+56    !----------------------------------------------------------------!
+57    !
+58  DIM Key_menu$(0:9)[14],Scrolling_keys$(0:9)[14]
+59  DIM Current_menu$[12],Key_choice$[14],Label$[14]
+60  DIM Program_name$[12],Subsystem_name$[12]
+61  DIM Pass_parm$[23]
+62  INTEGER I,Menu_size
+63    !
+64    !----------------------------------------------------------------!
+65    !
+66    !  MANAGER INITIALIZATON
+67    !
+68  Clr_scr
+69  OUTPUT 2;"�# SCRATCH K �X";
+70    !
+71  CALL Mass_stg_init
+72  CALL Set_clock
+73  CALL Init_menu
+74    !
+75    !
+76    !----------------------------------------------------------------!
+77    !
+78  DATA     "", "", "", "", ""
+79  DATA Select, "", "", "", EXIT
+80  READ Scrolling_keys$(*)
+81       !
+82  Current_menu$="Top_level"
+83  REPEAT
+84     CALL Menu_reader(Current_menu$)
+85     SELECT FNRead_menu_str$("MENU TYPE")
+86     CASE "SCROLLING"
+87        CALL Title_scrolling
+88        CALL Print_menu_page
+89        CALL Get_key_choice(Key_choice$,Scrolling_keys$(*),"SCROLLING")
+90     CASE "KEY"
+91        CALL Title_key_menu
+92        CALL Get_menu_keys(Key_menu$(*))
+93        CALL Get_key_choice(Key_choice$,Key_menu$(*),"KEY")
+94          !
+95        Menu_size=FNRead_menu_intgr("MENU SIZE")
+96        I=0
+97        REPEAT
+98           I=I+1
+99           IF FNRead_menu_str$("SELECTION TYPE",I)<>"H" THEN 
+100             Label$=FNRead_menu_str$("KEY LABEL",I)
+101          END IF
+102       UNTIL Label$=Key_choice$ OR I>=Menu_size
+103       CALL Wrt_menu_intgr("CURRENT LINE",I)
+104    END SELECT
+105      !
+106    IF POS(Key_choice$,"EXIT")<>0 THEN 
+107       GOSUB Menu_pop
+108       Current_menu$=FNRead_menu_str$("MENU EXIT")
+109    ELSE
+110       GOSUB Do_selection
+111    END IF
+112      !
+113 UNTIL Current_menu$="TOP LVL RET"
+114 CALL Clr_scr
+115 Show_message("MANAGER ENDED, press 'RUN' to restart.")
+116 BEEP 
+117 PAUSE
+118   !
+119 STOP    !!!
+120   !
+121 Do_selection:!
+122   !----------------------------------------------------------------!
+123   !  This subroutine selects the action to take based on the
+124   !  selection type and performs the necessary action.
+125   !----------------------------------------------------------------!
+126 SELECT FNRead_menu_str$("SELECTION TYPE")
+127 CASE "C"            ! Call subprogram
+128    Program_name$=FNRead_menu_str$("SELECTION NAME")
+129    Pass_parm$=FNRead_menu_str$("PASS PARM")
+130    GOSUB Menu_push
+131    CALL Call_subprogram(Program_name$,Pass_parm$)
+132    GOSUB Menu_pop
+133      !
+134 CASE "L"            ! Load subsystem
+135    Current_menu$=FNRead_menu_str$("SELECTION NAME")
+136    Subsystem_name$=FNRead_menu_str$("SUBSYS NAME")
+137    GOSUB Menu_push
+138    GOSUB Load_subsystem   ! (Subsystem_name$)
+139      !
+140 CASE "M"            ! Menu
+141    Current_menu$=FNRead_menu_str$("SELECTION NAME")
+142    GOSUB Menu_push
+143      !
+144 CASE "S"            ! Call subsystem previously loaded
+145    Pass_parm$=FNRead_menu_str$("PASS PARM")
+146    GOSUB Menu_push
+147    CALL Call_subprogram(Subsystem_name$,Pass_parm$)
+148    GOSUB Menu_pop
+149      !
+150 CASE "T","G"        ! Transfer to subsystem
+151    Subsystem_name$=FNRead_menu_str$("SELECTION NAME")
+152    Pass_parm$=FNRead_menu_str$("PASS PARM")
+153    GOSUB Menu_push
+154    GOSUB Load_subsystem   ! (Subsystem_name$)
+155    CALL Call_subprogram(Subsystem_name$,Pass_parm$)
+156    GOSUB Menu_pop
+157 CASE ELSE
+158    CALL Clr_scr
+159    CALL Show_message("Unknown line type")
+160    BEEP 200,.5
+161    BEEP 100,.5
+162    PAUSE
+163 END SELECT
+164 RETURN 
+165   !
+166 Menu_push:      !
+167   !----------------------------------------------------------------!
+168   !  Pushes Length & Current_line onto the menu stack. Checks the
+169   !  pointer field of the selected field of the string 'Menu$(*)'
+170   !  by the use of 'FNRead_menu_intgr', if true then the string
+171   !  variable Dir_pointer$ will be extended with the selection name
+172   !  If the stack is full, NOTHING HAPPENS.
+173   !----------------------------------------------------------------!
+174 IF Stack_pointer>Stack_size THEN 
+175         ! Stack is Full, do nothing.
+176 ELSE
+177    Stack_pointer=Stack_pointer+1
+178    Length_stack(Stack_pointer)=LEN(Dir_pointer$)
+179    Line_stack(Stack_pointer)=FNRead_menu_intgr("CURRENT LINE")
+180    IF FNRead_menu_intgr("EXTEND PTR")<>0 THEN 
+181       IF Msus$[1,7]=":REMOTE" THEN 
+182          Dir_pointer$=Dir_pointer$&FNTrim$(FNRead_menu_str$("SELECTION NAME"))&"/"
+183       END IF
+184    END IF
+185 END IF
+186 CALL Wrt_menu_intgr("CURRENT LINE",1)
+187 RETURN 
+188   !
+189 Menu_pop:      !
+190   !----------------------------------------------------------------!
+191   !  Removes the top items (Length & Current_line) from the menu
+192   !  stack. Then the string variable 'Dir_pointer$' is cut back to
+193   !  the length defined by the integer variable 'Length'.
+194   !  If the stack is empty NOTHING HAPPENS.
+195   !----------------------------------------------------------------!
+196   !
+197 IF Stack_pointer>0 THEN 
+198    Dir_pointer$=Dir_pointer$[1,Length_stack(Stack_pointer)]
+199    CALL Wrt_menu_intgr("CURRENT LINE",Line_stack(Stack_pointer))
+200    Stack_pointer=Stack_pointer-1
+201 END IF
+202   !
+203 RETURN 
+204   !
+205 Load_subsystem:  !
+206   !----------------------------------------------------------------!
+207   !  This subroutine will call the subsystem delimiter function to
+208   !  read the name of the subsystem in memory. Then compare the
+209   !  name of the subsystem in memory to the name of the desired
+210   !  subsystem. If there is a match then this subprogram will end.
+211   !  If there is no match then the subsystem in memory is deleted
+212   !  and the appropriate subsystem is loaded by 'Load_sub'. Since
+213   !  there may be no subsystem delimiter in memory (ie. no subsystem
+214   !  in memory) the potential error is trapped.
+215   !----------------------------------------------------------------!
+216 DIM System_loaded$[14]
+217   !----------------------------------------------------------------!
+218 Subsystem_name$=FNTrim$(Subsystem_name$)
+219 Mount_volume(Subsystem_name$,"SYSTEM")
+220 ON ERROR GOSUB No_subsystem
+221 WHILE Subsystem_name$<>FNSubsystem_name$
+222    OFF ERROR 
+223    DELSUB FNSubsystem_name$ TO END
+224    CALL Load_sub(Manager_sys$,Subsystem_name$,Msus$)
+225 END WHILE
+226   !
+227 RETURN 
+228   !
+229 No_subsystem:  !
+230   !----------------------------------------------------------------!
+231   !  This subroutine will trap the case where there is no function
+232   !  'FNSubsystem$', and load the subsystem. All other errors cause
+233   !  an error message to be printed. Error traping is turned off in
+234   !  this subroutine and NOT reenabled, so if the subsystem file
+235   !  loaded does not contain the required function 'FNSubsystem',
+236   !  the series 200 operating system error handling will cause an
+237   !  error.
+238   !----------------------------------------------------------------!
+239 OFF ERROR 
+240 IF ERRN=7 THEN 
+241    CALL Load_sub(Manager_sys$,Subsystem_name$,Msus$)
+242 ELSE
+243    BEEP 
+244    DISP "ERROR ";ERRN;" while trying to read subsystem name."
+245    PAUSE
+246 END IF
+247   !
+248 RETURN 
+249   !
+250 END
+251   !
+252   ! ************************************************************** !
+253   !
+254 SUB Call_subprogram(Sub_name$,Pass_string$)
+255 Call_sub:        !
+256   !----------------------------------------------------------------!
+257   !  This subprogram outputs to the keyboard a call statment to
+258   !  call a subprogram whos name is contained in the input parameter
+259   !  'Sub_name$'. If the input parameter 'Pass_string$'=NULL then
+260   !  the call will be without any pass parameters.
+261   !----------------------------------------------------------------!
+262    DIM Call_string$[160]
+263   !----------------------------------------------------------------!
+264    Pass_string$=FNTrim$(Pass_string$)
+265    IF Pass_string$<>"" THEN 
+266       Call_string$="CALL "&Sub_name$&"("&Pass_string$&")"
+267    ELSE
+268       Call_string$="CALL "&Sub_name$
+269    END IF
+270      !
+271    OUTPUT 2;CHR$(255)&"#";    ! Clears the keyboard line
+272    OUTPUT 2;Call_string$;     ! Output the call to the keyboard
+273    OUTPUT 2;CHR$(255)&"X";    ! Execute
+274      !
+275 SUBEND
+276   !
+277   ! ************************************************************** !
+278   !
+279 SUB Clr_scr
+280 Clr_scr: !
+281   !----------------------------------------------------------------!
+282   !  This subprogram outputs to the key board a clear screen command
+283   !----------------------------------------------------------------!
+284      !
+285    OUTPUT 2;CHR$(255)&"K";
+286    GRAPHICS OFF
+287      !
+288 SUBEND
+289   !
+290   ! ************************************************************** !
+291   !
+292 SUB Get_key_choice(Key_pressed$,Key_labels$(*),Menu_type$,OPTIONAL INTEGER Auto_delay)
+293 Get_key_choice: !
+294   !----------------------------------------------------------------!
+295   !  This subprogram handles all the interrupt needs for both key
+296   !  and menu files. Then returns in the output parameter
+297   !  'Key_pressed$' the label of the function key that the operator
+298   !  pressed, or the indication "TIMEOUT" if the optional input
+299   !  parameter 'Auto_delay' was included in the pass list and no
+300   !  operator intervension in the allowed time.
+301   !----------------------------------------------------------------!
+302    INTEGER Key_selected,I,Knob_sense,Pulse_count
+303    INTEGER Top_of_page,Present_line,Menu_size
+304    INTEGER Target_line,Pointer_shift,Pause_flag
+305    REAL End_time
+306    DIM Key$[80],Dut_id$[26]
+307   !----------------------------------------------------------------!
+308    Dut_id$=FNRead_menu_str$("DISP LINE LABEL")
+309    Top_of_page=FNRead_menu_intgr("TOP OF PAGE")
+310    Present_line=FNRead_menu_intgr("CURRENT LINE")
+311    Menu_size=FNRead_menu_intgr("MENU SIZE")
+312      !
+313    Knob_sense=8
+314    Pause_flag=0
+315      !
+316    ON KBD ALL,7 GOSUB Check_key
+317    ON KNOB .075,7 GOSUB Check_knob
+318      !
+319    FOR I=0 TO 9                                  ! Label the keys.
+320       ON KEY (I) LABEL Key_labels$(I) GOTO 320   ! Dummy GOTO is
+321                                                  ! overriden by the
+322    NEXT I                                        ! ON KBD ALL.
+323      !
+324    IF NPAR=4 THEN 
+325       IF Auto_delay>999 THEN Auto_delay=999
+326       REPEAT
+327          DISP USING "3D,X,18A,XX,K";Auto_delay,"secs to choose key",Dut_id$
+328          End_time=TIMEDATE+1
+329          REPEAT
+330             GOSUB Pause
+331          UNTIL TIMEDATE>End_time OR Key_selected
+332          Auto_delay=Auto_delay-1
+333       UNTIL Auto_delay<=0 OR Key_selected
+334       IF NOT Key_selected THEN 
+335          Key_pressed$="TIMEOUT"
+336          DISP 
+337       ELSE
+338          DISP Key_pressed$
+339       END IF
+340    ELSE
+341       REPEAT
+342         !KEY menu_type will disable the time
+343         !and date display. kh 6-13-85
+344          IF Menu_type$<>"KEY" THEN 
+345             DISP FNDate_time$&"   "&Dut_id$
+346          END IF
+347          GOSUB Pause
+348       UNTIL Key_selected
+349       DISP Key_pressed$
+350    END IF
+351    OFF KBD
+352    OFF KNOB
+353    SUBEXIT
+354      !
+355 Pause:!
+356      !-------------------------------------------------------------!
+357    IF Pause_flag THEN 
+358       Pause_flag=0
+359       PAUSE
+360    END IF
+361    RETURN 
+362      !
+363 Check_key: !
+364      !-------------------------------------------------------------!
+365      !  This subroutine handles all key board key interrupts, and
+366      !  calles 'Move_pointer' if the arrow is to be moved.
+367      !-------------------------------------------------------------!
+368    Key$=KBD$
+369    IF Key$[1,1]<>CHR$(255) THEN 
+370         ! Do Nothing ! ! !
+371    ELSE
+372       Pointer_shift=0
+373         !
+374       SELECT Key$[2,2]
+375       CASE "0","1","2","3","4","5","6","7","8","9"
+376          Key_pressed$=Key_labels$(NUM(Key$[2])-48)
+377          IF Key_pressed$<>"" THEN 
+378             Key_selected=1
+379          ELSE
+380             BEEP 
+381          END IF
+382       CASE "P"                             ! PAUSE key pressed.
+383          Pause_flag=1
+384       CASE "^"                             ! UP key pressed.
+385          Pointer_shift=-1
+386       CASE "V"                             ! DOWN key pressed.
+387          Pointer_shift=1
+388       CASE "W"                             ! Shift UP key pressed.
+389          IF Menu_type$="SCROLLING" THEN 
+390             IF Top_of_page=1 THEN 
+391                Target_line=(((Menu_size-1) DIV 13)*13)+1
+392                Pointer_shift=Target_line-Present_line
+393             ELSE
+394                Wrt_menu_intgr("CURRENT LINE",Top_of_page-14)
+395                Pointer_shift=1
+396             END IF
+397          END IF
+398       CASE "T"                             ! Shift DOWN key pressed.
+399          IF Menu_type$="SCROLLING" THEN 
+400             IF Top_of_page+13>Menu_size THEN 
+401                Target_line=1
+402             ELSE
+403                Target_line=Top_of_page+13
+404             END IF
+405             Pointer_shift=Target_line-Present_line
+406          END IF
+407       CASE "O"                             ! DUMP ALPHA key pressed.
+408          CALL Dump_alpha_scr
+409       CASE "N"                             ! DUMP GRAPHICS pressed.
+410          CALL Dump_graph_scr
+411       CASE "M"                             ! ALPHA
+412          ALPHA ON
+413          GRAPHICS OFF
+414       CASE "L"                             ! GRAPHICS
+415          GRAPHICS ON
+416          ALPHA OFF
+417       CASE ELSE
+418       END SELECT
+419         !
+420       IF Menu_type$="SCROLLING" AND Pointer_shift<>0 THEN 
+421          CALL Move_pointer(Pointer_shift)
+422          Top_of_page=FNRead_menu_intgr("TOP OF PAGE")
+423          Present_line=FNRead_menu_intgr("CURRENT LINE")
+424       END IF
+425    END IF
+426    RETURN 
+427      !
+428 Check_knob: !
+429      !-------------------------------------------------------------!
+430      !  This subroutine handles all knob interrupts, and calls
+431      !  'Move_pointer' if the arrow is to be moved.
+432      !-------------------------------------------------------------!
+433    IF Menu_type$="SCROLLING" THEN 
+434       Pulse_count=Pulse_count+KNOBX
+435       IF ABS(Pulse_count)>Knob_sense THEN 
+436          Pointer_shift=Pulse_count DIV Knob_sense
+437          IF Pointer_shift+Present_line>Top_of_page+13 THEN 
+438             Pointer_shift=Top_of_page+13-Present_line
+439          END IF
+440          IF Pointer_shift+Present_line<Top_of_page THEN 
+441             Pointer_shift=Top_of_page-1-Present_line
+442          END IF
+443          CALL Move_pointer(Pulse_count DIV Knob_sense)
+444          Pulse_count=Pulse_count MOD Knob_sense
+445          Top_of_page=FNRead_menu_intgr("TOP OF PAGE")
+446          Present_line=FNRead_menu_intgr("CURRENT LINE")
+447       END IF
+448    END IF
+449    RETURN 
+450      !
+451 SUBEND
+452   !
+453   ! ************************************************************** !
+454   !
+455 SUB Get_menu_keys(Menu_key$(*))
+456 Get_menu_keys:    !
+457   !---------------------------------------------------------------!
+458   !  This subprogram loads the Menu_key$(*) array from the
+459   !  Menu$(*) array in the /Menu_info/ common area.
+460   !---------------------------------------------------------------!
+461    INTEGER Key_num,I
+462   !---------------------------------------------------------------!
+463    FOR I=0 TO 9
+464       Menu_key$(I)=""
+465    NEXT I
+466      !
+467    FOR I=1 TO FNRead_menu_intgr("MENU SIZE")
+468       Key_num=FNRead_menu_intgr("KEY NUMBER",I)
+469       IF Key_num<=9 THEN 
+470          Menu_key$(Key_num)=FNRead_menu_str$("KEY LABEL",I)
+471       END IF
+472    NEXT I
+473      !
+474 SUBEND
+475   !
+476   ! ************************************************************** !
+477   !
+478 SUB Init_menu
+479 Init_menu:  !
+480   !----------------------------------------------------------------!
+481   !  This subprogram dimensions the variables in COM /Menu_info/
+482   !  and initialize the string array 'Menu$(*)' and the
+483   !  integers 'Max_menu_size', and 'Current_line'.
+484   !----------------------------------------------------------------!
+485    COM /Menu_info/ Menu_name$[12],Menu_rev$[2],Menu_type$[10]
+486    COM /Menu_info/ Menu_level$[2],Menu_exit$[12]
+487    COM /Menu_info/ Menu_label$(1:8)[80],Menu$(1:60)[80]
+488    COM /Menu_info/ Disp_line_label$[26],INTEGER Menu_size
+489    COM /Menu_info/ INTEGER Current_line,Top_of_page,Max_menu_size
+490   !----------------------------------------------------------------!
+491   !  Menu_name$    Name of the menu in memory.
+492   !  Menu_rev$     Revision code of menu in memory.
+493   !  Menu_type$    How menu is to be presented. (Scrolling or Key)
+494   !  Menu_level$
+495   !  Menu_exit$    Name of the menu superrior to the menu in memory.
+496   !  Menu_label$   Array of 8 strings used to label the menu.
+497   !  Menu$         This is the menu array.
+498   !  Menu_size     The number of elements of 'Menu$' used
+499   !                to hold the present menu.
+500   !  Current_line  Pointer to 'Menu$' used to display
+501   !                selection arrow.
+502   !  Top_of_page   Pointer to 'Menu$' indicating which line
+503   !                is at the top of the scrolling menu display area
+504   !                of the crt.
+505   !  Max_menu_size The dimensioned size of 'Menu$'.
+506   !----------------------------------------------------------------!
+507    DIM All_spaces$[80]
+508    INTEGER I
+509   !----------------------------------------------------------------!
+510      !
+511    Max_menu_size=60
+512      !
+513    OUTPUT All_spaces$ USING "#,80X"
+514      !
+515    FOR I=1 TO Max_menu_size
+516       Menu$(I)=All_spaces$
+517    NEXT I
+518      !
+519 SUBEND
+520   !
+521   ! ************************************************************** !
+522   !
+523 SUB Move_pointer(INTEGER Move)
+524 Move_pointer:  !
+525   !----------------------------------------------------------------!
+526   !  This subprogram controlls the possitioning of the pointer
+527   !  'Current_line', and determines when it is necessary to print
+528   !   a new scrolling menu page.
+529   !  'Move' <INPUT>
+530   !----------------------------------------------------------------!
+531    INTEGER Line_pointer
+532    INTEGER Direction
+533    INTEGER Menu_size
+534    INTEGER Arrow_possition
+535    INTEGER Top_of_page
+536   !----------------------------------------------------------------!
+537      !
+538    Menu_size=FNRead_menu_intgr("MENU SIZE")
+539    Top_of_page=FNRead_menu_intgr("TOP OF PAGE")
+540    Line_pointer=FNRead_menu_intgr("CURRENT LINE")
+541      !
+542    Arrow_possition=Line_pointer-Top_of_page+4
+543    Line_pointer=Move+Line_pointer
+544      !
+545    IF Line_pointer<=1 THEN Line_pointer=1
+546    IF Line_pointer>=Menu_size THEN Line_pointer=Menu_size
+547      !
+548    IF Move>=0 THEN 
+549       Direction=1
+550    ELSE
+551       Direction=-1
+552    END IF
+553      !
+554    WHILE FNRead_menu_str$("SELECTION TYPE",Line_pointer)="H"
+555       IF Line_pointer<=1 THEN Direction=1
+556       IF Line_pointer>=Menu_size THEN Direction=-1
+557       Line_pointer=Line_pointer+Direction
+558    END WHILE
+559      !
+560    CALL Wrt_menu_intgr("CURRENT LINE",Line_pointer)
+561      !
+562    SELECT Line_pointer
+563    CASE <Top_of_page
+564       CALL Print_menu_page
+565    CASE >Top_of_page+12
+566       CALL Print_menu_page
+567    CASE ELSE
+568       PRINT TABXY(1,Arrow_possition);"     "
+569       PRINT TABXY(1,Line_pointer-Top_of_page+4);">>==>"
+570    END SELECT
+571      !
+572 SUBEND
+573   !
+574   ! ************************************************************** !
+575   !
+576 SUB Print_menu_page(OPTIONAL Page_control$)
+577 Print_menu_page: !
+578   !----------------------------------------------------------------!
+579   !  This subprogram will print one page of a scrolling menu on the
+580   !  controller CRT. The segment printed is determined by the value
+581   !  of 'Current_line'.
+582   !----------------------------------------------------------------!
+583   !  OPTIONAL 'Page_control$' not used needs to be removed from
+584   !  all calls to 'Print_menu_page'.
+585   !----------------------------------------------------------------!
+586    COM /Menu_info/ Menu_name$,Menu_rev$,Menu_type$,Menu_level$
+587    COM /Menu_info/ Menu_exit$,Menu_label$(*),Menu$(*),Disp_line$
+588    COM /Menu_info/ INTEGER Menu_size,Current_line
+589    COM /Menu_info/ INTEGER Top_of_page,Max_menu_size
+590   !----------------------------------------------------------------!
+591    INTEGER I
+592    INTEGER Screen_line
+593    INTEGER New_page
+594    DIM Line$[50]
+595   !----------------------------------------------------------------!
+596    Top_of_page=((Current_line-1) DIV 13)*13+1
+597      !
+598    FOR I=Top_of_page TO Top_of_page+12
+599       IF I<=Menu_size THEN 
+600          IF Menu$(I)[1,1]="H" THEN 
+601             OUTPUT Line$ USING "#,2X,48A";Menu$(I)[40,80]
+602          ELSE
+603             Line$="     "&Menu$(I)[38,39]&". "&Menu$(I)[40,80]
+604          END IF
+605       ELSE
+606          OUTPUT Line$ USING "#,50X"
+607       END IF
+608       Screen_line=I-Top_of_page+4
+609       PRINT TABXY(1,Screen_line);Line$
+610    NEXT I
+611    WHILE Menu$(Current_line)[1,1]="H" AND Current_line<Menu_size-1
+612       Current_line=Current_line+1
+613    END WHILE
+614    PRINT TABXY(1,Current_line-Top_of_page+4);">>==>"
+615      !
+616    New_page=KNOBX
+617      !
+618 SUBEND
+619   !
+620   ! ************************************************************** !
+621   !
+622 SUB Show_message(Message$,OPTIONAL INTEGER Line,Column)
+623 Show_message:        !
+624   !----------------------------------------------------------------!
+625   !  This SUB will print Message$ centered on the CRT of a
+626   !  Series 200 Computer.
+627   !  If LEN(Message$)>Screen Width THEN it will start in column 1
+628   !  and wrap around to the next line.
+629   !  No triming of spaces is done in computing the screen possitiong
+630   !  of the message to be displayed.
+631   !----------------------------------------------------------------!
+632    INTEGER Column_tab,Line_tab,Screen_width
+633   !----------------------------------------------------------------!
+634    SELECT NPAR
+635    CASE 1
+636       Line_tab=11
+637       GOSUB Centering
+638    CASE 2
+639       Line_tab=Line
+640       GOSUB Centering
+641    CASE 3
+642       Line_tab=Line
+643       Column_tab=Column
+644    END SELECT
+645    PRINT TABXY(Column_tab,Line_tab);Message$
+646    SUBEXIT
+647      !
+648 Centering:      !
+649      !-------------------------------------------------------------!
+650      !  This subroutine reads the screen status register to
+651      !  determine the screen width. Once the screen width is known
+652      !  the line starting location is computed so that the line
+653      !  will be centered on the screen. This routine will also clear
+654      !  the line that the message is to be displayed on.
+655      !-------------------------------------------------------------!
+656    DIM All_spaces$[80]
+657      !-------------------------------------------------------------!
+658    STATUS 1,9;Screen_width
+659    OUTPUT All_spaces$ USING "#,"&VAL$(Screen_width)&"X"
+660    PRINT TABXY(1,Line_tab);All_spaces$
+661      !
+662    Column_tab=((Screen_width-LEN(Message$)) DIV 2)+1
+663    IF Column_tab<1 THEN Column_tab=1
+664    RETURN 
+665      !
+666 SUBEND
+667   !
+668   ! ************************************************************** !
+669   !
+670 SUB Title_key_menu
+671 Title_key_menu: !
+672   !----------------------------------------------------------------!
+673   !  This subprogram will print the menu label array centered on
+674   !  the controller CRT. This subprogram will use the string
+675   !  function 'FNRead_menu_str$' to access the information needed
+676   !  in the '/Menu_info/ common block.
+677   !----------------------------------------------------------------!
+678    INTEGER I
+679   !----------------------------------------------------------------!
+680    CALL Clr_scr
+681      !
+682    FOR I=1 TO 8
+683       Show_message(FNRead_menu_str$("MENU LABEL",I),I+5,1)
+684    NEXT I
+685    DISP FNRead_menu_str$("DISP LINE LABEL")
+686      !
+687 SUBEND
+688   !
+689   ! ************************************************************** !
+690   !
+691 SUB Title_scrolling
+692 Title_scrolling: !
+693   !----------------------------------------------------------------!
+694   !  This subprogram will clear the CRT and output the menu label
+695   !  array elements to the appropate locations on the controller
+696   !  CRT for displaying scrolling menus.
+697   !----------------------------------------------------------------!
+698    CALL Clr_scr
+699      !
+700    PRINT FNRead_menu_str$("MENU LABEL",1)
+701    PRINT FNRead_menu_str$("MENU LABEL",2)
+702    PRINT FNRead_menu_str$("MENU LABEL",3)
+703    PRINT USING "12/"
+704    PRINT FNRead_menu_str$("MENU LABEL",4)
+705    PRINT FNRead_menu_str$("MENU LABEL",5)
+706    DISP FNRead_menu_str$("DISP LINE LABEL")
+707      !
+708 SUBEND
+709   !
+710   ! ************************************************************** !
+711   !
+712 SUB Save_screen
+713 Save_screen:  !
+714   !----------------------------------------------------------------!
+715    INTEGER Screen_width
+716   !----------------------------------------------------------------!
+717    STATUS 1,9;Screen_width
+718    CONTROL 1,1;37
+719    CONTROL 1,0;Screen_width
+720    PRINT 
+721      !
+722 SUBEND
+723   !
+724   ! ************************************************************** !
+725   !
+726 SUB Restore_screen
+727 Restore_screen:  !
+728   !----------------------------------------------------------------!
+729    INTEGER Screen_width,Lines_above
+730   !----------------------------------------------------------------!
+731    STATUS 1,9;Screen_width
+732    STATUS 1,3;Lines_above
+733    IF Lines_above<18 THEN 
+734       DISP "SCREEN LOST"
+735       BEEP 200,.3
+736       BEEP 100,.5
+737       WAIT 1.5
+738       DISP 
+739    ELSE
+740       CONTROL 1,1;-18
+741       PRINT 
+742    END IF
+743      !
+744 SUBEND
+745 !
+746 ! ************************************************************** !
+747 !
+748 SUB Menu_reader(Requested_menu$,OPTIONAL Req_menu_rev$)
+749 Menu_reader:  !
+750 !----------------------------------------------------------------!
+751 !
+752 ! o 06/16/86  Modified for Series 300 Compatibility  DG
+753 ! o 09/25/86  Label mods for Performance Test software.  Changed
+754 !             Menu_label$ from 5 to 8 labels.
+755 !
+756 !----------------------------------------------------------------!
+757 !
+758    COM /Mass_storage/ Manager_system$,Menu_dir$,Data_dir$,Msus$
+759    COM /Config/ Software$[30],Mass_stg_sys$[12],Data_disc_label$[9]
+760    COM /Software_rev/ Performance_rev$,Op_ver_rev$
+761 !
+762 !----------------------------------------------------------------!
+763    COM /Menu_info/ Menu_name$,Menu_rev$,Menu_type$
+764    COM /Menu_info/ Menu_level$,Menu_exit$
+765    COM /Menu_info/ Menu_label$(*),Menu$(*)
+766    COM /Menu_info/ Disp_line_label$,INTEGER Size_index
+767    COM /Menu_info/ INTEGER Current_line,Top_of_page,Max_menu_size
+768 !----------------------------------------------------------------!
+769    COM /Enhancements/ On$[1],Off$[1],Flash$[1]
+770 !----------------------------------------------------------------!
+771    DIM File_nme$[100]
+772    DIM All_spaces$[80]
+773 !----------------------------------------------------------------!
+774    INTEGER Loaded_ok
+775    Hil_keyboard=FNCheck_keyboard
+776 !----------------------------------------------------------------!
+777    SELECT FNTrim$(Requested_menu$)
+778    CASE "Top_level","TOP LEVEL"
+779       Menu_name$=Requested_menu$
+780       Menu_rev$="AA"
+781       Menu_type$="KEY"
+782       Menu_exit$="Top_lvl_ret"
+783       SELECT Software$
+784       CASE "OP VER"
+785          Menu_label$(1)="--------------------------------------------------"
+786          Menu_label$(2)="|      HP 8340A/B and 8341A/B TEST SOFTWARE      |"
+787          Menu_label$(3)="|                                                |"
+788          Menu_label$(4)="|           Attenuator Calibration and           |"
+789          Menu_label$(5)="|             Operation Verification             |"
+790          Menu_label$(6)="|                                                |"
+791          Menu_label$(7)="|                  REV: "&Op_ver_rev$&"                  |"
+792          Menu_label$(8)="--------------------------------------------------"
+793       CASE "PERFORMANCE"
+794          Menu_label$(1)="--------------------------------------------------"
+795          Menu_label$(2)="|                   HP 11877A                    |"
+796          Menu_label$(3)="|                                                |"
+797          Menu_label$(4)="|           Performance Test Software            |"
+798          Menu_label$(5)="|                                                |"
+799          Menu_label$(6)="|               Revision: "&Performance_rev$&"                |"
+800          Menu_label$(7)="--------------------------------------------------"
+801          Menu_label$(8)=""
+802       END SELECT
+803       Disp_line_label$=Flash$&" Select a key below "&Off$
+804 Fs8340_top:   !
+805       Size_index=6
+806       DATA "L08340A TESTS JANITOR                00Tst8340A   "
+807       DATA "L08341A TESTS JANITOR                02Tst8341A   "
+808       DATA "L08340X TESTS JANITOR                04TstH02     "
+809       DATA "L08340B TESTS JANITOR                05Tst8340B   "
+810       DATA "L08341B TESTS JANITOR                07Tst8341B   "
+811       DATA "M0CAL UTILITY                        09Cal Utility "
+812         !
+813 Fs8340_top_300:   !
+814       DATA "L08340A TESTS JANITOR                00Test   8340A  "
+815       DATA "L08341A TESTS JANITOR                02Test   8341A  "
+816       DATA "L08340X TESTS JANITOR                04Test   8340H02"
+817       DATA "L08340B TESTS JANITOR                05Test   8340B  "
+818       DATA "L08341B TESTS JANITOR                07Test   8341B  "
+819       DATA "M0CAL UTILITY                        09Cal    Utility"
+820         !
+821       IF Hil_keyboard=0 THEN 
+822          RESTORE Fs8340_top
+823       ELSE
+824          RESTORE Fs8340_top_300
+825       END IF
+826       GOSUB Read_menu
+827         !
+828         !
+829    CASE "8340A TESTS"
+830       Menu_name$=Requested_menu$
+831       Menu_rev$="AA"
+832       Menu_exit$="TOP LEVEL"
+833       Menu_type$="KEY"
+834       SELECT Software$
+835       CASE "PERFORMANCE"
+836          Menu_label$(1)="--------   8340A TEST SELECTION MENU   -----------"
+837          Menu_label$(2)=""
+838          Menu_label$(3)=On$&" KEY 0 "&Off$&" Performance Tests"
+839          Menu_label$(4)=On$&" KEY 2 "&Off$&" Operation Verification"
+840 ! NOT USED ! Menu_label$(5)=On$&" KEY 4 "&Off$&" Adjustments"
+841          Menu_label$(5)=""
+842          Menu_label$(6)="--------------------------------------------------"
+843          Menu_label$(7)=""
+844          Menu_label$(8)=""
+845          Disp_line_label$=Flash$&" Select TYPE OF TESTING "&Off$
+846          Size_index=3
+847 Lbl_8340a_tests:        !
+848          DATA "S0            ""M"",""FSP8340A"",0       00PerfTst"
+849          DATA "S0            ""M"",""FSV8340A"",0       02OpVer"
+850 ! NOT USED !  DATA "S0            ""M"",""FSA8340A"",0       04Adjust  "
+851          DATA "M0TOP LEVEL                          04 EXIT"
+852            !
+853          RESTORE Lbl_8340a_tests
+854       CASE "OP VER"
+855          Menu_label$(1)="--------   8340A TEST SELECTION MENU   -----------"
+856          Menu_label$(2)=""
+857          Menu_label$(3)=On$&" KEY 0 "&Off$&" Operation Verification"
+858          Menu_label$(4)=On$&" KEY 2 "&Off$&" Attenuator Calibration"
+859          Menu_label$(5)=""
+860          Menu_label$(6)="--------------------------------------------------"
+861          Menu_label$(7)=""
+862          Menu_label$(8)=""
+863          Disp_line_label$=Flash$&" Select TYPE OF TESTING "&Off$
+864          Size_index=3
+865 Lbl_8340a_tst_f:        !
+866          DATA "S0            ""M"",""FSV8340A"",0       00OpVer"
+867          DATA "S0            ""M"",""FSC8340A"",0       02Cal  "
+868          DATA "M0TOP LEVEL                          04 EXIT"
+869            !
+870          RESTORE Lbl_8340a_tst_f
+871         !
+872       END SELECT
+873       GOSUB Read_menu
+874         !
+875    CASE "8341A TESTS"
+876       Menu_name$=Requested_menu$
+877       Menu_rev$="AA"
+878       Menu_exit$="TOP LEVEL"
+879       Menu_type$="KEY"
+880       SELECT Software$
+881       CASE "PERFORMANCE"
+882          Menu_label$(1)="--------   8341A TEST SELECTION MENU   -----------"
+883          Menu_label$(2)=""
+884          Menu_label$(3)=On$&" KEY 0 "&Off$&" Performance Tests"
+885          Menu_label$(4)=On$&" KEY 2 "&Off$&" Operation Verification"
+886 ! NOT USED !  Menu_label$(5)=On$&" KEY 4 "&Off$&" Adjustments"
+887          Menu_label$(5)=""
+888          Menu_label$(6)="--------------------------------------------------"
+889          Menu_label$(7)=""
+890          Menu_label$(8)=""
+891          Disp_line_label$=Flash$&" Select TYPE OF TESTING "&Off$
+892          Size_index=3
+893 Lbl_8341a_tests:        !
+894          DATA "S0            ""M"",""FSP8341A"",0       00PerfTst"
+895          DATA "S0            ""M"",""FSV8341A"",0       02OpVer  "
+896 ! NOT USED!  DATA "S0            ""M"",""FSA8341A"",0       04Adjust"
+897          DATA "M0TOP LEVEL                          04 EXIT"
+898            !
+899          RESTORE Lbl_8341a_tests
+900       CASE "OP VER"
+901          Menu_label$(1)="--------   8341A TEST SELECTION MENU   -----------"
+902          Menu_label$(2)=""
+903          Menu_label$(3)=On$&" KEY 0 "&Off$&" Operation Verification"
+904          Menu_label$(4)=On$&" KEY 2 "&Off$&" Attenuator Calibration"
+905          Menu_label$(5)=""
+906          Menu_label$(6)="--------------------------------------------------"
+907          Menu_label$(7)=""
+908          Menu_label$(8)=""
+909          Disp_line_label$=Flash$&" Select TYPE OF TESTING "&Off$
+910          Size_index=3
+911 Lbl_8341a_tst_f:        !
+912          DATA "S0            ""M"",""FSV8341A"",0       00OpVer            "
+913          DATA "S0            ""M"",""FSC8341A"",0       02Cal            "
+914          DATA "M0TOP LEVEL                          04 EXIT"
+915            !
+916          RESTORE Lbl_8341a_tst_f
+917         !
+918       END SELECT
+919       GOSUB Read_menu
+920         !
+921    CASE "8340B TESTS"
+922       Menu_name$=Requested_menu$
+923       Menu_rev$="AA"
+924       Menu_exit$="TOP LEVEL"
+925       Menu_type$="KEY"
+926       SELECT Software$
+927       CASE "PERFORMANCE"
+928          Menu_label$(1)="--------   8340B TEST SELECTION MENU   -----------"
+929          Menu_label$(2)=""
+930          Menu_label$(3)=On$&" KEY 0 "&Off$&" Performance Tests"
+931          Menu_label$(4)=On$&" KEY 2 "&Off$&" Operation Verification"
+932 ! NOT USED !  Menu_label$(5)=On$&" KEY 4 "&Off$&" Adjustments"
+933          Menu_label$(5)=""
+934          Menu_label$(6)="--------------------------------------------------"
+935          Menu_label$(7)=""
+936          Menu_label$(8)=""
+937          Disp_line_label$=Flash$&" Select TYPE OF TESTING "&Off$
+938          Size_index=3
+939 Lbl_8340b_tests:        !
+940          DATA "S0            ""M"",""FSP8340B"",0       00PerfTst"
+941          DATA "S0            ""M"",""FSV8340B"",0       02OpVer  "
+942 ! NOT USED !  DATA "S0            ""M"",""FSA8340B"",0       04Adjust "
+943          DATA "M0TOP LEVEL                          04 EXIT"
+944            !
+945          RESTORE Lbl_8340b_tests
+946       CASE "OP VER"
+947          Menu_label$(1)="--------   8340B TEST SELECTION MENU   -----------"
+948          Menu_label$(2)=""
+949          Menu_label$(3)=On$&" KEY 0 "&Off$&" Operation Verification"
+950          Menu_label$(4)=On$&" KEY 2 "&Off$&" Attenuator Calibration"
+951          Menu_label$(5)=""
+952          Menu_label$(6)="--------------------------------------------------"
+953          Menu_label$(7)=""
+954          Menu_label$(8)=""
+955          Disp_line_label$=Flash$&" Select TYPE OF TESTING "&Off$
+956          Size_index=3
+957 Lbl_8340b_tst_f:        !
+958          DATA "S0            ""M"",""FSV8340B"",0       00OpVer"
+959          DATA "S0            ""M"",""FSC8340B"",0       02Cal  "
+960          DATA "M0TOP LEVEL                          04 EXIT"
+961            !
+962          RESTORE Lbl_8340b_tst_f
+963         !
+964       END SELECT
+965       GOSUB Read_menu
+966         !
+967    CASE "8341B TESTS"
+968       Menu_name$=Requested_menu$
+969       Menu_rev$="AA"
+970       Menu_exit$="TOP LEVEL"
+971       Menu_type$="KEY"
+972       SELECT Software$
+973       CASE "PERFORMANCE"
+974          Menu_label$(1)="--------   8341B TEST SELECTION MENU   -----------"
+975          Menu_label$(2)=""
+976          Menu_label$(3)=On$&" KEY 0 "&Off$&" Performance Tests"
+977          Menu_label$(4)=On$&" KEY 2 "&Off$&" Operation Verification"
+978 ! NOT USED !  Menu_label$(5)=On$&" KEY 4 "&Off$&" Adjustments"
+979          Menu_label$(5)=""
+980          Menu_label$(6)="--------------------------------------------------"
+981          Menu_label$(7)=""
+982          Menu_label$(8)=""
+983          Disp_line_label$=Flash$&" Select TYPE OF TESTING "&Off$
+984          Size_index=3
+985 Lbl_8341b_tests:        !
+986          DATA "S0            ""M"",""FSP8341B"",0       00PerfTst"
+987          DATA "S0            ""M"",""FSV8341B"",0       02OpVer  "
+988 ! NOT USED !  DATA "S0            ""M"",""FSA8341B"",0       04Adjust"
+989          DATA "M0TOP LEVEL                          04 EXIT"
+990            !
+991          RESTORE Lbl_8341b_tests
+992       CASE "OP VER"
+993          Menu_label$(1)="--------   8341B TEST SELECTION MENU   -----------"
+994          Menu_label$(2)=""
+995          Menu_label$(3)=On$&" KEY 0 "&Off$&" Operation Verification"
+996          Menu_label$(4)=On$&" KEY 2 "&Off$&" Attenuator Calibration"
+997          Menu_label$(5)=""
+998          Menu_label$(6)="--------------------------------------------------"
+999          Menu_label$(7)=""
+1000         Menu_label$(8)=""
+1001         Disp_line_label$=Flash$&" Select TYPE OF TESTING "&Off$
+1002         Size_index=3
+1003 Lbl_8341b_tst_f:       !
+1004         DATA "S0            ""M"",""FSV8341B"",0       00OpVer            "
+1005         DATA "S0            ""M"",""FSC8341B"",0       02Cal            "
+1006         DATA "M0TOP LEVEL                          04 EXIT"
+1007           !
+1008         RESTORE Lbl_8341b_tst_f
+1009        !
+1010      END SELECT
+1011      GOSUB Read_menu
+1012        !
+1013   CASE "8340X TESTS"
+1014      Menu_name$=Requested_menu$
+1015      Menu_rev$="AA"
+1016      Menu_exit$="TOP LEVEL"
+1017      Menu_type$="KEY"
+1018      SELECT Software$
+1019      CASE "PERFORMANCE"
+1020         Menu_label$(1)="-------- 8340A HO2 TEST SELECTION MENU -----------"
+1021         Menu_label$(2)=""
+1022         Menu_label$(3)=On$&" KEY 0 "&Off$&" Performance Tests"
+1023         Menu_label$(4)=On$&" KEY 2 "&Off$&" Operation Verification"
+1024 ! NOT USED !  Menu_label$(5)=On$&" KEY 4 "&Off$&" Adjustments"
+1025         Menu_label$(5)=""
+1026         Menu_label$(6)="--------------------------------------------------"
+1027         Menu_label$(7)=""
+1028         Menu_label$(8)=""
+1029         Disp_line_label$=Flash$&" Select TYPE OF TESTING "&Off$
+1030         Size_index=3
+1031 Lbl_8340x_tests:       !
+1032         DATA "S0            ""M"",""FSP8340X"",0       00PerfTst"
+1033         DATA "S0            ""M"",""FSV8340X"",0       02OpVer  "
+1034 ! NOT USED ! DATA "S0            ""M"",""FSA8340X"",0       04Adjust "
+1035         DATA "M0TOP LEVEL                          04 EXIT"
+1036           !
+1037         RESTORE Lbl_8340x_tests
+1038      CASE "OP VER"
+1039         Menu_label$(1)="-------- 8340A HO2 TEST SELECTION MENU -----------"
+1040         Menu_label$(2)=""
+1041         Menu_label$(3)=On$&" KEY 0 "&Off$&" Operation Verification"
+1042         Menu_label$(4)=On$&" KEY 2 "&Off$&" Attenuator Calibration"
+1043         Menu_label$(5)=""
+1044         Menu_label$(6)="--------------------------------------------------"
+1045         Menu_label$(7)=""
+1046         Menu_label$(8)=""
+1047         Disp_line_label$=Flash$&" Select TYPE OF TESTING "&Off$
+1048         Size_index=3
+1049 Lbl_8340x_tst_f:       !
+1050         DATA "S0            ""M"",""FSV8340X"",0       00OpVer            "
+1051         DATA "S0            ""M"",""FSC8340X"",0       02Cal            "
+1052         DATA "M0TOP LEVEL                          04 EXIT"
+1053           !
+1054         RESTORE Lbl_8340x_tst_f
+1055        !
+1056      END SELECT
+1057      GOSUB Read_menu
+1058        !
+1059   CASE "CAL UTILITY"
+1060     !
+1061      Menu_name$=Requested_menu$
+1062      Menu_rev$="AA"
+1063      Menu_type$="KEY"
+1064      Menu_exit$="TOP LEVEL"
+1065      Menu_label$(1)="------------------------------------------------"
+1066      Menu_label$(2)="    C A L I B R A T I O N     U T I L I T Y"
+1067      Menu_label$(3)="------------------------------------------------"
+1068      Menu_label$(4)=""
+1069      Menu_label$(5)=On$&" KEY 5 "&Off$&"to enter IF Attenuator's Calibration Data"
+1070      Menu_label$(6)=On$&" KEY 7 "&Off$&"to enter the Power Sensor's Cal Factors."
+1071      Menu_label$(7)=""
+1072      Menu_label$(8)="------------------------------------------------"
+1073      Disp_line_label$=Flash$&" Select a UTILITY below "&Off$
+1074      Size_index=3
+1075 Fscal_util:  !
+1076      DATA "C0If_atten_cal                       05IF Attenuator Cal"
+1077      DATA "C0Pwr_sensor                         07Pwr Sensor Cal"
+1078      DATA "M0TOP LEVEL                          09EXIT          "
+1079        !
+1080 Fscal_util_300:  !
+1081      DATA "C0If_atten_cal                       05Cal IF Atten"
+1082      DATA "C0Pwr_sensor                         07Cal PwrSensor"
+1083      DATA "M0TOP LEVEL                          09EXIT          "
+1084      !
+1085      IF Hil_keyboard=0 THEN 
+1086         RESTORE Fscal_util
+1087      ELSE
+1088         RESTORE Fscal_util_300
+1089      END IF
+1090      GOSUB Read_menu
+1091        !
+1092   CASE ELSE
+1093      IF NPAR=2 THEN 
+1094         IF LEN(Req_menu_rev$) THEN 
+1095            File_nme$=Requested_menu$&Req_menu_rev$
+1096         ELSE
+1097            File_nme$=Requested_menu$
+1098         END IF
+1099      ELSE
+1100         File_nme$=Requested_menu$
+1101      END IF
+1102        !
+1103      Get_menu(File_nme$,Id$,Menu_name$,Menu_rev$,Menu_type$,Menu_level$,Menu_exit$,Menu_label$(*),Disp_line_label$,Menu$(*),Size_index,Loaded_ok)
+1104        !
+1105      IF NOT Loaded_ok THEN 
+1106         PAUSE
+1107      END IF
+1108   END SELECT
+1109     !
+1110   OUTPUT All_spaces$ USING "#,80X"
+1111   FOR I=1 TO Size_index
+1112      IF LEN(Menu$(I))<80 THEN 
+1113         Menu$(I)=Menu$(I)&All_spaces$[1,80-LEN(Menu$(I))]
+1114      END IF
+1115   NEXT I
+1116     !
+1117   SUBEXIT
+1118     !
+1119 Read_menu:! (INTEGER Size_index)
+1120  !----------------------------------------------------------------!
+1121  !  This subroutine will read the number of data statments into
+1122  !  the 'Menu$(*)' string array specifed by the input parameter
+1123  !  'Size_index'.
+1124  !----------------------------------------------------------------!
+1125   INTEGER I
+1126  !----------------------------------------------------------------!
+1127   FOR I=1 TO Size_index
+1128      READ Menu$(I)
+1129   NEXT I
+1130   RETURN 
+1131     !
+1132 SUBEND
+1133  !
+1134  ! ************************************************************** !
+1135  !
+1136 DEF FNRead_menu_intgr(Field$,OPTIONAL INTEGER Line_pointer)
+1137 Read_menu_intgr: !
+1138  !---------------------------------------------------------------!
+1139   COM /Menu_info/ Menu_name$,Menu_rev$,Menu_type$,Menu_level$
+1140   COM /Menu_info/ Menu_exit$,Menu_label$(*),Menu$(*)
+1141   COM /Menu_info/ Disp_line_label$,INTEGER Menu_size
+1142   COM /Menu_info/ INTEGER Current_line,Top_of_page,Max_menu_size
+1143  !---------------------------------------------------------------!
+1144   INTEGER Pointer
+1145   INTEGER First
+1146   INTEGER Lenght
+1147  !---------------------------------------------------------------!
+1148   SELECT Field$
+1149   CASE "CURRENT LINE"
+1150      RETURN Current_line
+1151   CASE "TOP OF PAGE"
+1152      RETURN Top_of_page
+1153   CASE "MENU SIZE"
+1154      RETURN Menu_size
+1155   CASE "MAX SIZE"
+1156      RETURN Max_menu_size
+1157   END SELECT
+1158     !
+1159   IF NPAR=2 THEN 
+1160      Pointer=Line_pointer
+1161   ELSE
+1162      Pointer=Current_line
+1163   END IF
+1164     !
+1165   SELECT Field$
+1166   CASE "EXTEND PTR"
+1167      First=2
+1168      Lenght=1
+1169   CASE "SELECTION NUMBER","KEY NUMBER","TEST NUMBER"
+1170      First=38
+1171      Lenght=2
+1172   CASE "AUTO RUN"
+1173      First=37
+1174      Lenght=1
+1175   CASE ELSE
+1176      Clr_scr
+1177      Show_message("UNKNOWN ARGUMENT : "&Field$&" for 'FNRead_menu_intgr'")
+1178      BEEP 200,.3
+1179      BEEP 100,.5
+1180      PAUSE
+1181        !
+1182      STOP
+1183   END SELECT
+1184     !
+1185   RETURN VAL(Menu$(Pointer)[First;Lenght])
+1186     !
+1187 FNEND
+1188  !
+1189  !***************************************************************!
+1190  !
+1191 DEF FNRead_menu_str$(Field$,OPTIONAL INTEGER Line_pointer)
+1192 Read_menu_str: !
+1193  !---------------------------------------------------------------!
+1194   COM /Menu_info/ Menu_name$,Menu_rev$,Menu_type$,Menu_level$
+1195   COM /Menu_info/ Menu_exit$,Menu_label$(*),Menu$(*)
+1196   COM /Menu_info/ Disp_line_label$,INTEGER Menu_size
+1197   COM /Menu_info/ INTEGER Current_line,Top_of_page,Max_menu_size
+1198  !---------------------------------------------------------------!
+1199   INTEGER Pointer
+1200   INTEGER First
+1201   INTEGER Lenght
+1202  !---------------------------------------------------------------!
+1203   SELECT Field$
+1204   CASE "DISP LINE LABEL"
+1205      RETURN Disp_line_label$
+1206   CASE "MENU NAME"
+1207      RETURN Menu_name$
+1208   CASE "MENU REV"
+1209      RETURN Menu_rev$
+1210   CASE "MENU TYPE"
+1211      RETURN Menu_type$
+1212   CASE "MENU LEVEL"
+1213      RETURN Menu_level$
+1214   CASE "MENU EXIT"
+1215      RETURN Menu_exit$
+1216   END SELECT
+1217     !
+1218   IF NPAR=2 THEN 
+1219      Pointer=Line_pointer
+1220   ELSE
+1221      Pointer=Current_line
+1222   END IF
+1223     !
+1224   SELECT Field$
+1225   CASE "MENU LABEL"
+1226      IF NPAR=1 OR Pointer>8 THEN 
+1227         RETURN Menu_label$(1)
+1228      ELSE
+1229         RETURN Menu_label$(Pointer)
+1230      END IF
+1231   CASE "MENU LINE"
+1232      First=1
+1233      Lenght=80
+1234   CASE "SELECTION TYPE"
+1235      First=1
+1236      Lenght=1
+1237   CASE "EXTEND PTR"
+1238      First=2
+1239      Lenght=1
+1240   CASE "SELECTION NAME","TEST NAME"
+1241      First=3
+1242      Lenght=12
+1243   CASE "SUBSYS NAME","FILE NAME"
+1244      First=15
+1245      Lenght=12
+1246   CASE "PASS PARM"
+1247      First=15
+1248      Lenght=23
+1249   CASE "CUSTOM"
+1250      First=27
+1251      Lenght=10
+1252   CASE "DESCRIPTION"
+1253      First=40
+1254      Lenght=41
+1255   CASE "KEY LABEL"
+1256      First=40
+1257      Lenght=14
+1258   CASE "TEST DESC"
+1259      First=40
+1260      Lenght=21
+1261   CASE "TEST STAT"
+1262      First=63
+1263      Lenght=6
+1264   CASE "AUTO STAT"
+1265      First=71
+1266      Lenght=8
+1267   CASE ELSE
+1268      Clr_scr
+1269      Show_message("UNKNOWN ARGUMENT : "&Field$&" for 'FNRead_menu_str$'")
+1270      BEEP 200,.3
+1271      BEEP 100,.5
+1272      PAUSE
+1273      STOP
+1274   END SELECT
+1275     !
+1276   RETURN Menu$(Pointer)[First;Lenght]
+1277     !
+1278 FNEND
+1279  !
+1280  ! ************************************************************** !
+1281  !
+1282 SUB Wrt_menu_intgr(Field$,INTEGER Data)
+1283 Wrt_menu_intgr: !
+1284  !---------------------------------------------------------------!
+1285   COM /Menu_info/ Menu_name$,Menu_rev$,Menu_type$,Menu_level$
+1286   COM /Menu_info/ Menu_exit$,Menu_label$(*),Menu$(*)
+1287   COM /Menu_info/ Disp_line_label$,INTEGER Menu_size
+1288   COM /Menu_info/ INTEGER Current_line,Top_of_page,Max_menu_size
+1289  !---------------------------------------------------------------!
+1290   SELECT Field$
+1291   CASE "CURRENT LINE"
+1292      Current_line=Data
+1293   CASE "TOP OF PAGE"
+1294      Top_of_page=Data
+1295   CASE ELSE
+1296      Clr_scr
+1297      Show_message("UNKNOWN ARGUMENT "&Field$&" FOR 'Wrt_menu_intgr'")
+1298      BEEP 200,.3
+1299      BEEP 100,.5
+1300      PAUSE
+1301      STOP
+1302   END SELECT
+1303     !
+1304 SUBEND
+1305  !
+1306  !***************************************************************!
+1307  !
+1308 SUB Wrt_menu_str(Field$,Data$,OPTIONAL INTEGER Line_pointer)
+1309 Wrt_menu_str: !
+1310  !---------------------------------------------------------------!
+1311   COM /Menu_info/ Menu_name$,Menu_rev$,Menu_type$,Menu_level$
+1312   COM /Menu_info/ Menu_exit$,Menu_label$(*),Menu$(*)
+1313   COM /Menu_info/ Disp_line_label$,INTEGER Menu_size
+1314   COM /Menu_info/ INTEGER Current_line,Top_of_page,Max_menu_size
+1315  !---------------------------------------------------------------!
+1316   INTEGER Pointer
+1317   INTEGER First
+1318   INTEGER Lenght
+1319   DIM Pad_data$[80]
+1320  !---------------------------------------------------------------!
+1321   IF NPAR=3 THEN 
+1322      Pointer=Line_pointer
+1323   ELSE
+1324      Pointer=Current_line
+1325   END IF
+1326     !
+1327   SELECT Field$
+1328   CASE "MENU NAME"
+1329      Menu_name$=Data$
+1330      SUBEXIT
+1331   CASE "MENU LABEL"
+1332      IF NPAR<3 OR Pointer>8 THEN Pointer=1
+1333      Menu_label$(Pointer)=Data$
+1334      SUBEXIT
+1335   CASE "DISP LINE LABEL"
+1336      Disp_line_label$=Data$
+1337      SUBEXIT
+1338   CASE "MENU LINE"
+1339      First=1
+1340      Lenght=80
+1341   CASE "CUSTOM"
+1342      First=27
+1343      Lenght=10
+1344   CASE "TEST STAT"
+1345      First=63
+1346      Lenght=6
+1347   CASE "AUTO STAT"
+1348      First=71
+1349      Lenght=8
+1350   CASE ELSE
+1351      Clr_scr
+1352      Show_message("UNKNOWN ARGUMENT : "&Field$&" for 'Wrt_menu_str'")
+1353      BEEP 200,.3
+1354      BEEP 100,.5
+1355      PAUSE
+1356      STOP
+1357   END SELECT
+1358     !
+1359   OUTPUT Pad_data$ USING "#,"&VAL$(Lenght)&"A";Data$
+1360   Menu$(Pointer)[First;Lenght]=Pad_data$
+1361     !
+1362 SUBEND
+1363  !
+1364  !***************************************************************!
+1365  !
+1366 Secure_1_end: ! ** Secure from Secure_1_start to Secure_1_end **
+1367 SUB Mass_stg_init
+1368 Mass_stg_init:!
+1369  !
+1370 Secure_2_start: ! ** Secure from Secure_2_start to Secure_2_end **
+1371  !
+1372  !----------------------------------------------------------------!
+1373  !  FIELD SERVICE VERSION -- assumes HP 9133H or 9122D Disc Drive
+1374  !
+1375  !  03/25/87  Modified for Series 300 compatibility.  DG
+1376  !----------------------------------------------------------------!
+1377  !  This subprogram must initialize the variables for a particular
+1378  !  implementation of 'MANAGER'.
+1379  !----------------------------------------------------------------!
+1380   COM /Mass_storage/ Manager_sys$,Menu_storage$
+1381   COM /Mass_storage/ Dir_pointer$,Msus$
+1382   COM /Dut_storage/ Dut_dir$[50],Dut_msus$[50]
+1383   COM /Janitor_mode/ Jan_mode$[12]
+1384   COM /Config/ Software$[30],Mass_stg_sys$[12],Data_disc_label$[9]
+1385   COM /Software_rev/ Performance_rev$,Op_ver_rev$
+1386   COM /Enhancements/ On$[1],Off$[1],Flash$[1]
+1387   DIM Volume_label$[30]
+1388   Data_disc_label$=""
+1389   INTEGER I
+1390  !----------------------------------------------------------------!
+1391  !
+1392 Secure_2_end: ! ** Secure from Secure_2_start to Secure_2_end **
+1393  !
+1394  !  Manager_sys$     Directory pointer for Test System program files and
+1395  !                   Cal Factor files.
+1396  !  Msus$            Mass storage unit specifer for Test system program
+1397  !                   files, Menu files, and Cal Factor files.
+1398  !
+1399  !  Dut_dir$         Directory pointer for DUT data files.
+1400  !  Dut_msus$        Mass storage specifier for DUT data files.
+1401 Secure_3_start: ! ** Secure from Secure_3_start to Secure_3_end **
+1402  !  Dir_pointer$     Directory pointer for Subsystem data files.(NOT USED)
+1403  !  Menu_storage$    Directory pointer for Menu files.
+1404  !  Software$        Test software system specifier. Either 'PERFORMANCE'
+1405  !                   (to run the Performance Test Software package) or
+1406  !                   'OP VER' (to run the Attenuator
+1407  !                   Calibration and Operation Verification Test Software
+1408  !                   package.
+1409  !  Mass_stg_sys$    Defines if the Test Software is contained on a
+1410  !                   'SINGLE' disc or on 'MULTIPLE' discs.  This is set
+1411  !                   by the file 'LABEL' on DISC 1 of the software.
+1412  !  On$              Display enhancement to turn inverse video ON
+1413  !  Off$             Display enhancement to turn enhancement OFF
+1414  !  Flash$           Display enhancement to turn flashing ON
+1415 Secure_3_end: ! ** Secure from Secure_3_start to Secure_3_end **
+1416   Manager_sys$=""
+1417   Msus$=":,700,0"
+1418     !
+1419   Dut_dir$=""
+1420   Dut_msus$=":,700,1"
+1421     !
+1422 Secure_4_start: ! ** Secure from Secure_4_start to Secure_4_end **
+1423  !
+1424   Menu_storage$=Manager_sys$
+1425   Dir_pointer$=Manager_sys$
+1426     !
+1427   IF FNCheck_keyboard THEN 
+1428      CONTROL KBD,15;1
+1429      Show_message("The keyboard's Compatibility Mode has been enabled!",10)
+1430      Show_message("If you need to use the keyboard's 'CONTINUE' or 'RUN'",13)
+1431      Show_message("key while in this mode, you must simultaneously press",14)
+1432      Show_message("'Extend Char' and 'f2' to CONTINUE or",15)
+1433      Show_message("'Extend Char' and 'f3' to RUN",16)
+1434      WAIT 10
+1435   END IF
+1436     !
+1437  !------------------------------------------------------------------------!
+1438  !                    TEST SOFTWARE SYSTEM CONFIGURATION
+1439  !
+1440  !  The variable Software$ denotes which software system is being run;
+1441  !  either the Performance Test Software or the Attenuator Calibration and
+1442  !  Operation Verification Test Software.  Software$ is defined in the
+1443  !  ASCII file 'LABEL' located on DISC 1 of the Test Software and is either
+1444  !  set to 'PERFORMANCE' for the Performance Test Software package or to
+1445  !  'OP VER' for the Attenuator Calibration and Operation Verification
+1446  !  Test Software package.  The value of Software$ is obtained in the call
+1447  !  to Mount_volume below.
+1448  !
+1449  !------------------------------------------------------------------------!
+1450  !       MASS STORAGE SYSTEM CONFIGURATION FOR TEST SYSTEM STORAGE
+1451  !
+1452  !  The variable Mass_stg_sys$ denotes the mass storage system used for
+1453  !  Manager, Janitor, the Test programs, Menus, and Cal Factor storage. The
+1454  !  variable is defined in the file 'LABEL' located on DISC 1 of the test
+1455  !  software and will be either set to 'SINGLE' or 'MULTIPLE'. The variable
+1456  !  is set to single when the Performance Test Software is stored on a
+1457  !  single disc (i.e., a FIXED disc drive with >1.2 Mbytes storage) or when
+1458  !  the Op Ver software is stored on a single double sided 3.5" floppy or
+1459  !  a fixed disc drive.  When either software package is stored on
+1460  !  more than one disc, Mass_stg_sys$ will be set to 'MULTIPLE'.  The value
+1461  !  for Mass_stg_sys$ is obtained in the call to Mount_volume below.
+1462  !
+1463   Mount_volume("LABEL","DISC 1 LABEL")
+1464  !
+1465  !****************************************************************
+1466  !Copyright and Restricted Rights Legends Display
+1467  !****************************************************************
+1468   Clr_scr
+1469   IF Software$="PERFORMANCE" THEN 
+1470      Show_message("**************************************************",4)
+1471      Show_message("*   HP Model 11877A Performance Test Software    *",5)
+1472      Show_message("*               Revision: "&Performance_rev$&"                *",6)
+1473      Show_message("*     Copyright (C) Hewlett-Packard Co. 1987     *",7)
+1474      Show_message("**************************************************",8)
+1475   ELSE
+1476      Show_message("**************************************************",1)
+1477      Show_message("*                 HP Part Number                 *",2)
+1478      Show_message("*    08340-10009, 08340-10011, or 08340-10012    *",3)
+1479      Show_message("*           Attenuator Calibration and           *",4)
+1480      Show_message("*        Operation Verification Software         *",5)
+1481      Show_message("*               Revision: "&Op_ver_rev$&"                *",6)
+1482      Show_message("*   Copyright (C) Hewlett-Packard Co. 1986,1987  *",7)
+1483      Show_message("**************************************************",8)
+1484   END IF
+1485   Show_message("*            RESTRICTED RIGHTS LEGEND            *",9)
+1486   Show_message("*      Use, duplication or disclosure by the     *",10)
+1487   Show_message("*      Government is subject to restrictions     *",11)
+1488   Show_message("*    as set forth in subdivision (b)(3)(ii) of   *",12)
+1489   Show_message("*    the Rights in Technical Data and Computer   *",13)
+1490   Show_message("*         Software clause at 52.227-7013.        *",14)
+1491   Show_message("*             Hewlett-Packard Company            *",15)
+1492   Show_message("*    3000 Hanover Street, Palo Alto, CA  94303   *",16)
+1493   Show_message("**************************************************",17)
+1494   WAIT 5
+1495   OFF KEY 
+1496   ON KEY 5 LABEL "CarryOn" GOTO Enhance_strings
+1497   BEEP 2000,.1
+1498   LOOP
+1499   END LOOP
+1500 Enhance_strings:Clr_scr   !---------------------------------------!
+1501  !   SETS UP THE DISPLAY ENHANCEMENT STRINGS
+1502  !----------------------------------------------------------------!
+1503     !
+1504   On$=CHR$(129)
+1505   Off$=CHR$(128)
+1506   Flash$=CHR$(131)
+1507     !
+1508  !----------------------------------------------------------------!
+1509   Jan_mode$=""
+1510  !
+1511 SUBEND
+1512  !
+1513  ! ************************************************************** !
+1514  !
+1515 SUB Load_sub(File_locator$,File_name$,Msus$)
+1516 Load_sub:       !
+1517  !----------------------------------------------------------------!
+1518  !                   SRM MASS STORAGE SYSTEM                      !
+1519  !----------------------------------------------------------------!
+1520  !  Loads all SUBs from file File_name$ on the SRM. The file is
+1521  !  loaded from directory file_locator$.
+1522  !----------------------------------------------------------------!
+1523   Mount_volume(File_name$,"SYSTEM")
+1524   DISP "Loading subprogram file "&File_name$
+1525   ON ERROR GOSUB Check_error
+1526   LOADSUB ALL FROM File_locator$&File_name$&Msus$
+1527   DISP 
+1528   SUBEXIT
+1529     !
+1530 Check_error: !
+1531   Error_message("ON LOADSUB "&File_locator$&File_name$)
+1532   RETURN 
+1533     !
+1534 SUBEND
+1535  !
+1536  ! ************************************************************** !
+1537  !
+1538 SUB Mount_volume(File_name$,Info_required$)
+1539 Mount_volume:       !
+1540  !---------------------------------------------------------------------!
+1541  !  Allows software to run on multiple discs.  Mount_volume determines
+1542  !  disc needed when loading test subprograms, subsystem, data files,
+1543  !  and Calibration Factor files.  After determining which disc is
+1544  !  is needed, it checks the label of the disc currently installed in
+1545  !  the disc drive and then prompts the operator if another disc must
+1546  !  be installed.  Currently used for Field Service only.
+1547  !
+1548  !  NOTE: Regardless of the implementation (i.e., SINGLE SIDED, DOUBLE
+1549  !        SIDED, or FIXED disc versions), Manager, the Test Menus, and
+1550  !        the Calibration Factor data files will always be located on
+1551  !        DISC 1.
+1552  !---------------------------------------------------------------------!
+1553  !  Revision:  11/24/86   DG
+1554  !---------------------------------------------------------------------!
+1555   COM /Mass_storage/ Manager_sys$,Menu_storage$
+1556   COM /Mass_storage/ Dir_pointer$,Msus$
+1557   COM /Dut_storage/ Dut_dir$,Dut_msus$
+1558   COM /Config/ Software$,Mass_stg_sys$,Data_disc_label$
+1559   COM /Software_rev/ Performance_rev$,Op_ver_rev$
+1560   DIM Disc$[9],Access$[9],Soft$[11],Mass_stg$[12],Error$[80]
+1561   DIM Directory$[85],Address$[50]
+1562   INTEGER Error_number
+1563  !----------------------------------------------------------------!
+1564   OFF ERROR 
+1565   SELECT Info_required$
+1566   CASE "MENU","CAL FACTORS","DISC 1 LABEL"
+1567      Directory$=Manager_sys$
+1568      Address$=Msus$
+1569      Access$="DISC 1"    !  Menus and Cal Factors always on DISC 1
+1570   CASE "DATA DISC"
+1571      Directory$=Dut_dir$
+1572      Address$=Dut_msus$
+1573      IF Data_disc_label$="" THEN GOSUB Init_data_disc
+1574      Access$=Data_disc_label$
+1575   CASE "SYSTEM"
+1576      Directory$=Manager_sys$
+1577      Address$=Msus$
+1578      SELECT Mass_stg_sys$
+1579      CASE "FIXED"
+1580         Access$="DISC 1" ! Everything is on DISC 1 in FIXED implementation.
+1581      CASE "DOUBLE SIDED"
+1582         IF Software$="OP VER" THEN 
+1583            Access$="DISC 1"! Everything is on DISC 1
+1584         ELSE
+1585            GOSUB Get_disc_number
+1586         END IF
+1587      CASE "SINGLE SIDED"
+1588         GOSUB Get_disc_number
+1589      END SELECT
+1590   END SELECT
+1591   !
+1592 Get_the_label:  !
+1593   OFF KEY 
+1594   Clr_scr
+1595   Volume_label(Directory$,Address$,Disc$,Soft$,Mass_stg$,Error$,Error_number)
+1596   IF Error_number<>0 THEN 
+1597      GOSUB Check_error
+1598      GOTO Get_the_label
+1599   END IF
+1600 !
+1601 !  Disc Label Matches Required Disc
+1602 !
+1603   IF Access$=Disc$ THEN 
+1604      IF Info_required$="DISC 1 LABEL" THEN    ! Define COMMON variables
+1605         Software$=Soft$
+1606         Mass_stg_sys$=Mass_stg$
+1607      END IF
+1608      SUBEXIT
+1609   END IF
+1610 !
+1611 !  Disc Label Does Not Match Required Disc
+1612 !
+1613   Clr_scr
+1614   PRINT "***********************************************"
+1615   PRINT 
+1616   PRINT "Install the Test Software's ";Access$;" into:"
+1617   PRINT 
+1618   PRINT "     '"&Directory$&Address$&"'."
+1619   PRINT 
+1620   PRINT "Press CarryOn when ready."
+1621   PRINT 
+1622   PRINT "***********************************************"
+1623   OFF KEY 
+1624   ON KEY 5 LABEL "CarryOn" GOTO Get_the_label
+1625   FOR I=1 TO 3
+1626      BEEP I*750,.1
+1627   NEXT I
+1628   LOOP
+1629   END LOOP
+1630 !
+1631 Check_error: !
+1632   OFF KEY 
+1633   Clr_scr
+1634   SELECT Error_number
+1635   CASE 56    !   File name 'LABEL' is undefined.
+1636      PRINT "**************************************************"
+1637      PRINT 
+1638      PRINT "The program could not find the LABEL file on the"
+1639      PRINT "disc you inserted in the disc drive.  Ensure that"
+1640      PRINT "you have the Test Software's ";Access$;" in the"
+1641      PRINT "disc drive."
+1642      IF Access$="DATA DISC" THEN 
+1643         PRINT 
+1644         PRINT "If you have installed a new data disc into the"
+1645         PRINT "disc drive, you must re-run the Test Software to"
+1646         PRINT "allow the program to label the DATA DISC!!!"
+1647      END IF
+1648      PRINT 
+1649      PRINT "**************************************************"
+1650   CASE 80    !   Disc is not present.
+1651      PRINT "**************************************************"
+1652      PRINT 
+1653      PRINT "The disc is not present in the disc drive. Try"
+1654      PRINT "re-installing the disc and then press CarryOn."
+1655      PRINT 
+1656      PRINT "**************************************************"
+1657   CASE 85    !   Disc is not Initialized
+1658      PRINT "**************************************************"
+1659      PRINT 
+1660      IF Access$="DATA DISC" THEN 
+1661         PRINT "You have inserted an uninitialized DATA DISC into"
+1662         PRINT "the disc drive!!  You must first initialize the"
+1663         PRINT "DATA DISC and then press the keyboards CONTINUE"
+1664         PRINT "key!!  The program is now PAUSED."
+1665         PRINT 
+1666         PRINT "**************************************************"
+1667         PAUSE
+1668         GOTO Return
+1669      ELSE
+1670         PRINT "You have inserted an uninitialized disc into the"
+1671         PRINT "disc drive!!  Insert the Test Software's ";Access$
+1672         PRINT "into the disc drive and then press CarryOn."
+1673         PRINT 
+1674         PRINT "**************************************************"
+1675      END IF
+1676   CASE 72    !   Drive not found or bad Address
+1677      PRINT "**************************************************"
+1678      PRINT 
+1679      PRINT "The program is unable to access the disc drive at:"
+1680      PRINT 
+1681      PRINT "     '"&Directory$&Address$&"'."
+1682      PRINT 
+1683      PRINT "Check the disc drive's HP-IB address and HP-IB"
+1684      PRINT "cable connection.  Press CarryOn when ready."
+1685      PRINT 
+1686      PRINT "**************************************************"
+1687   CASE ELSE
+1688      Clr_scr
+1689      PRINT "*****************************************"
+1690      PRINT 
+1691      PRINT "The program encountered an error:"
+1692      PRINT 
+1693      PRINT "   Error Description:"
+1694      PRINT 
+1695      PRINT "     ",Error$
+1696      PRINT 
+1697      PRINT "Please correct the problem then press the"
+1698      PRINT "Keyboard's CONTINUE key when ready."
+1699      PRINT 
+1700      IF Error_number=84 THEN 
+1701         PRINT "Error number 84 usually indicates that"
+1702         PRINT "that the media has not been initialized!"
+1703         PRINT 
+1704      END IF
+1705      PRINT "*****************************************"
+1706      PAUSE
+1707      GOTO Return
+1708   END SELECT
+1709   !
+1710   BEEP 2000,.2
+1711   ON KEY 5 LABEL "CarryOn" GOTO Return
+1712   LOOP
+1713   END LOOP
+1714 Return:  !
+1715   OFF KEY 
+1716   RETURN 
+1717      !
+1718 Get_disc_number:  !
+1719   SELECT Software$
+1720   CASE "PERFORMANCE"
+1721      IF Mass_stg_sys$="SINGLE SIDED" THEN 
+1722         RESTORE Ss_perf_tests
+1723      ELSE
+1724         RESTORE Ds_perf_tests
+1725      END IF
+1726   CASE "OP VER"
+1727      RESTORE Op_ver_tests
+1728   END SELECT
+1729  !
+1730   LOOP
+1731      READ Test$
+1732      IF Test$[1,4]="DISC" THEN 
+1733         Access$=Test$
+1734         READ Test$
+1735      END IF
+1736   EXIT IF Test$=File_name$
+1737   END LOOP
+1738  !
+1739   RETURN 
+1740  !
+1741 Ss_perf_tests: !  Test order on Single Sided Performance Test discs.
+1742  !
+1743   DATA DISC 1,Cal_co,Thrash,Cw_acc
+1744   DATA DISC 2,JANITOR
+1745   DATA DISC 3,Swptim,Fre_sw,Alc_ad,Pwracc,Max_le
+1746   DATA DISC 4,Pwr_sw,Ext_le,Spurs_,Freq_a,Am_acc,Am_fla,H02dis
+1747   DATA DISC 5,Fm_ver,Harmon,Pha_no,At_cal
+1748   DATA END
+1749  !
+1750 Ds_perf_tests: !  Test order on Double Sided Performance Test discs.
+1751  !
+1752   DATA DISC 1,JANITOR,Cal_co,Thrash,Cw_acc,Swptim,Fre_sw,Alc_ad
+1753   DATA DISC 2,Pwracc,Max_le,Pwr_sw,Ext_le,Spurs_,Freq_a,Am_acc,Am_fla,H02dis,Fm_ver,Harmon,Pha_no,At_cal
+1754   DATA END
+1755  !
+1756 Op_ver_tests:! Test order on Single Sided Operation Verification discs.
+1757  !
+1758   DATA DISC 1,Fre_sw,At_cal
+1759   DATA DISC 2,JANITOR,Cal_co,Thrash
+1760   DATA DISC 3,Cw_acc,Alc_ad,Pwracc,Max_le
+1761   DATA END
+1762  !
+1763  !
+1764 Init_data_disc:  !
+1765  !------------------------------------------------------------------------!
+1766  !                       DATA DISC INITIALIZATION
+1767  !
+1768  !  This is where the disc label for the data disc is determined and
+1769  !  created if necessary.  For MULTIPLE disc implementation of either the
+1770  !  Performance Test Software or the Operation Verification Software, a
+1771  !  separate data disc must be used.  Also, for SINGLE disc implementation
+1772  !  of the Operation Verification test software, a separate data disc must
+1773  !  be used.  The label for the separate data disc is DATA DISC.  If the
+1774  !  Performance Test Software is implemented with a SINGLE disc, it is
+1775  !  assumed that a Fixed disc drive is being used and that there will be
+1776  !  sufficient space to store the test data.  In this situation, the
+1777  !  operator is given the choice to store the data on the fixed disc
+1778  !  or on a separate data disc.
+1779  !------------------------------------------------------------------------!
+1780   Data_disc_label$="DATA DISC"
+1781   Access$="DATA DISC"
+1782  !------------------------------------------------------------------------!
+1783 Prompt_for_disc:  !
+1784   OFF KEY 
+1785   Clr_scr
+1786   PRINT "**************************************************"
+1787   PRINT "Insert the Test Software's DATA DISC (disc which"
+1788   PRINT "you have designated for data storage) into:"
+1789   PRINT 
+1790   PRINT "     '"&Dut_dir$&Dut_msus$&"'."
+1791   PRINT 
+1792   PRINT "If you do not already have a DATA DISC for the"
+1793   PRINT "Test Software, insert a blank INITIALIZED disc"
+1794   PRINT "into the disc drive.  The software will then store"
+1795   PRINT "a file onto the disc which designates it for test"
+1796   PRINT "data and instrument configuration storage."
+1797   PRINT "**************************************************"
+1798   OFF KEY 
+1799   ON KEY 5 LABEL "CarryOn" GOTO Data_label
+1800   LOOP
+1801   END LOOP
+1802 Data_label:  !
+1803   OFF KEY 
+1804   Clr_scr
+1805   Volume_label(Directory$,Address$,Disc$,Soft$,Mass_stg$,Error$,Error_number)
+1806   IF Error_number<>0 THEN 
+1807      IF Error_number=56 THEN !  File name LABEL is undefined
+1808         CREATE ASCII Dut_dir$&"LABEL"&Dut_msus$,1
+1809         ASSIGN @Label TO Dut_dir$&"LABEL"&Dut_msus$
+1810         OUTPUT @Label;Data_disc_label$,Software$,Mass_stg_sys$
+1811         ASSIGN @Label TO *
+1812      ELSE
+1813         GOSUB Check_error
+1814         GOTO Data_label
+1815      END IF
+1816   ELSE
+1817      IF Access$=Data_disc_label$ THEN 
+1818         RETURN 
+1819      ELSE
+1820         IF Mass_stg$="SINGLE" AND Soft$="PERFORMANCE" THEN 
+1821            Data_disc_label$=Disc$
+1822         ELSE
+1823            Clr_scr
+1824            PRINT "**************************************************"
+1825            PRINT 
+1826            PRINT "You have inserted ";Disc$;" of the Test Software!"
+1827            PRINT "If you are running a floppy disc version of the"
+1828            PRINT "Test Software, you must use a separate floppy disc"
+1829            PRINT "for data storage.  There is insufficient space on"
+1830            PRINT "the test disc for test data storage!!"
+1831            PRINT 
+1832            PRINT "Press FLOPPY if the software you are running is"
+1833            PRINT "stored on a floppy disc."
+1834            PRINT 
+1835            PRINT "Press FIXED if the software you are running is"
+1836            PRINT "stored on a fixed disc drive."
+1837            PRINT 
+1838            PRINT "**************************************************"
+1839            OFF KEY 
+1840            ON KEY 5 LABEL "FLOPPY" GOTO Prompt_for_disc
+1841            ON KEY 9 LABEL "FIXED" GOTO Fixed_disc
+1842            BEEP 1500,.2
+1843            BEEP 2500,.2
+1844            LOOP
+1845            END LOOP
+1846 Fixed_disc:  !
+1847            OFF KEY 
+1848            Data_disc_label$=Disc$
+1849            RETURN 
+1850         END IF
+1851      END IF
+1852   END IF
+1853   RETURN 
+1854 SUBEND
+1855  !
+1856  ! ************************************************************** !
+1857  !
+1858 SUB Volume_label(Directory$,Msus$,Disc$,Soft$,Mass_stg$,Error_message$,INTEGER Error_number)
+1859 Volume_label:       !
+1860  !----------------------------------------------------------------!
+1861  !  Volume_label accesses the disc currently installed in the disc
+1862  !  drive and reads the disc label in the ASCII file 'LABEL'.  If
+1863  !  an error occurs when attempting to read the file LABEL, the
+1864  !  error number is returned.
+1865  !------------------------------------------------------------------------!
+1866  !                  DEFINITION FOR DISC ASCII FILE 'LABEL'
+1867  !
+1868  !The first variable stored in 'LABEL' is the Disc$ (i.e., the disc number)
+1869  !This variable is 9 characters long and will be one of the following:
+1870  !DISC 1, DISC 2, DISC 3, DISC 4, or DISC 5.
+1871  !
+1872  !The second variable stored in 'LABEL' is Soft$ (i.e., the type of
+1873  !software).  This variable is 11 characters long and will be either set
+1874  !to PERFORMANCE (for the Performance Test software) or OP VER (for the
+1875  !Attenuator Calibration and Operation Verification software).
+1876  !
+1877  !The final variable, Mass_stg$, defines the storage media containing the
+1878  !software. It will be defined as either SINGLE SIDED (5.25" or 3.5"
+1879  !floppies formatted for 256 bytes/sector, 270kbytes storage), DOUBLE SIDED
+1880  !(3.5" floppies formatted for 1024 bytes/sector, 788kbytes storage), or
+1881  !FIXED (for software stored on a fixed disc, i.e. an HP 9133H or 9153A).
+1882  !
+1883  !  DATA DISC IMPLEMENTATION:
+1884  !
+1885  !  If the user is using a separate data disc to store the test results,
+1886  !  the subprogram Mount_volume will automatically create a 'LABEL' file
+1887  !  for the data.  DATA DISC will be stored in the location specified
+1888  !  for Disc$ and Soft$ and Mass_stg$ will be defined as described above.
+1889  !---------------------------------------------------------------------!
+1890  !  Revision:  12/11/86   DG
+1891  !---------------------------------------------------------------------!
+1892   Error_number=0
+1893  !---------------------------------------------------------------------!
+1894   ON ERROR GOTO Drive_error
+1895   ASSIGN @Label TO Directory$&"LABEL"&Msus$
+1896   ENTER @Label;Disc$,Soft$,Mass_stg$
+1897   ASSIGN @Label TO *
+1898   Disc$=TRIM$(Disc$)
+1899   Soft$=TRIM$(Soft$)
+1900   Mass_stg$=TRIM$(Mass_stg$)
+1901   SUBEXIT
+1902  !
+1903 Drive_error:  !
+1904   Error_number=ERRN
+1905   Error_message$=ERRM$
+1906   OFF ERROR 
+1907   SUBEXIT
+1908 SUBEND
+1909  !
+1910  ! ************************************************************** !
+1911  !
+1912 SUB Assign_file(@File,Directory$,File_name$,Msus$,Err_traping$,OPTIONAL INTEGER Error_number,File_type$)
+1913 Assign_file:     !
+1914  !----------------------------------------------------------------!
+1915  !  SRM MASS STORAGE SYSTEM
+1916  !----------------------------------------------------------------!
+1917  !  Assigns @File to the file named File_name$ on the mass storage
+1918  !  device with Msus$ for an MSUS. The input parameter 'Directory$'
+1919  !  is the SRM directory pointer.
+1920  !  Err_traping$ specifies which of 3 types of error trapping will
+1921  !  be done. "TRAP ALL": displays an error message for all errors.
+1922  !  "REPORT ALL": use 'Error_number' to report all errors.
+1923  !  "EXPECTED": use 'Error_number' to report the expected error
+1924  !  (ERRN=Error_number) only, all other errors display the error
+1925  !  message.
+1926  !----------------------------------------------------------------!
+1927  ! 02.17.87  Added File_type$ to optional parameters. Currently only
+1928  !           used by Asgn_cal_factor.  DG
+1929  !----------------------------------------------------------------!
+1930   IF NPAR=7 THEN 
+1931      Mount_volume(File_name$,"CAL FACTORS") ! Check for CAL FACTORS disc
+1932                                             ! installed (currently DISC 1).
+1933   ELSE
+1934      IF File_name$[1,2]="FS" THEN 
+1935         Mount_volume(File_name$,"MENU")! Check for MENU disc installed
+1936                                        ! (currently DISC 1).
+1937      ELSE
+1938         Mount_volume(File_name$,"DATA DISC")! Check for DATA DISC installed
+1939      END IF
+1940   END IF
+1941   ON ERROR GOSUB Check_error
+1942   ASSIGN @File TO Directory$&File_name$&Msus$
+1943   OFF ERROR 
+1944     !
+1945   IF NPAR>=6 THEN 
+1946      Error_number=0
+1947   END IF
+1948     !
+1949   SUBEXIT
+1950     !
+1951 Check_error:!
+1952     !
+1953   OFF ERROR 
+1954   SELECT Err_traping$
+1955   CASE "TRAP ALL"
+1956      Error_message("WHEN OPENING "&Directory$&File_name$)
+1957   CASE "REPORT ALL"
+1958      Error_number=ERRN
+1959      SUBEXIT
+1960   CASE "EXPECTED"
+1961      IF Error_number<>ERRN THEN 
+1962         Error_message("WHEN OPENING "&Directory$&File_name$)
+1963      ELSE
+1964         Error_number=ERRN
+1965         SUBEXIT
+1966      END IF
+1967   END SELECT
+1968   ON ERROR GOSUB Check_error
+1969   RETURN 
+1970     !
+1971 SUBEND
+1972  !
+1973  ! ************************************************************** !
+1974  !
+1975 SUB Error_message(Err_message$)
+1976 Error_message: !
+1977  !----------------------------------------------------------------!
+1978  !----------------------------------------------------------------!
+1979   Save_screen
+1980   Show_message("ERROR # :"&VAL$(ERRN),10)
+1981   Show_message(Err_message$,11)
+1982   Show_message(ERRM$&".",13)
+1983   IF VAL$(ERRN)="80" THEN CALL Show_message("Is the disc for storing your test data installed?",15)
+1984   Show_message("Correct the problem then press the",17)
+1985   Show_message("keyboard's 'Continue' key when ready.",18)
+1986   BEEP 200,.3
+1987   BEEP 100,.5
+1988   PAUSE
+1989     ! Restore_screen
+1990 SUBEND
+1991  !
+1992  ! ************************************************************** !
+1993  !
+1994  ! ************************************************************** !
+1995  ! ************************************************************** !
+1996  ! ***                                                        *** !
+1997  ! ***       REQUIRED CUSTOM MODULES BELOW THIS LINE          *** !
+1998  ! ***                                                        *** !
+1999  ! ************************************************************** !
+2000  ! ************************************************************** !
+2001  !
+2002 SUB Set_clock
+2003 Set_clock:       !
+2004  !----------------------------------------------------------------!
+2005  !  This subprogram verifies that the clock is set. If the clock
+2006  !  is not set then the operator will be querried for the current
+2007  !  date and time and the clock will be set by use of SET TIMEDATE.
+2008  !----------------------------------------------------------------!
+2009   INTEGER Entry_ok
+2010   REAL Hour,Minute,Day,Month,Year
+2011   REAL Century,Remainder,Julian
+2012  !----------------------------------------------------------------!
+2013   PRINTER IS 1
+2014   IF TIMEDATE>2.113085664E+11 THEN 
+2015        !  2.113085664E+11 = "1 JAN 1984"
+2016        !  The clock is set so display the time and subexit
+2017      DISP FNDate_time$
+2018      SUBEXIT
+2019   END IF
+2020     !
+2021   REPEAT
+2022      Entry_ok=1
+2023      OUTPUT 2;FNDate_time$;CHR$(255);"H";
+2024      DISP "Enter Date and Time: (dd mmm yyyy  HH:MM)"
+2025      ENTER 2 USING "DD,X,3A,X,4D,2X,DD,X,DD,";Day,Month$,Year,Hour,Minute
+2026      DISP 
+2027      IF Hour<0 OR Hour>23 THEN Entry_ok=0
+2028      IF Minute<0 OR Minute>59 THEN Entry_ok=0
+2029      IF Day<1 OR Day>31 THEN Entry_ok=0
+2030      Month$=FNUpc$(Month$)
+2031      Month=POS("JAN FEB MAR APR MAY JUN JUL AUG SEP OCT NOV DEC",Month$)
+2032      IF Month=0 THEN 
+2033         Entry_ok=0
+2034      ELSE
+2035         Month=Month DIV 4+1
+2036      END IF
+2037      IF NOT Entry_ok THEN BEEP 
+2038   UNTIL Entry_ok
+2039   IF Month>2 THEN 
+2040      Month=Month-3
+2041   ELSE
+2042      Month=Month+9
+2043      Year=Year-1
+2044   END IF
+2045   Century=Year DIV 100
+2046   Remainder=Year MOD 100
+2047   Julian=146097*Century DIV 4+1461*Remainder DIV 4+(153*Month+2) DIV 5+Day+1721119
+2048   Julian=Julian*86400+(Hour*60+Minute)*60
+2049     !
+2050   SET TIMEDATE Julian
+2051     !
+2052 SUBEND
+2053  !
+2054  ! ************************************************************** !
+2055  !
+2056 DEF FNDate_time$
+2057 Date_time: !
+2058  !----------------------------------------------------------------!
+2059  !  This function returns a string that containes the date and
+2060  !  time as determined by the clock in the keyboard.
+2061  !----------------------------------------------------------------!
+2062   RETURN FNDate$&"  "&FNTime$
+2063     !
+2064 FNEND
+2065  !
+2066  ! ************************************************************** !
+2067  !
+2068 DEF FNDate$(OPTIONAL REAL Input_num)
+2069 Date: !
+2070  !----------------------------------------------------------------!
+2071  !  This function will mimic the AP2.1 extension function DATE$
+2072  !  when the optional parameter is included. When the optional
+2073  !  parameter is not included then the TIMEDATE function will be
+2074  !  used as the argument for this function.
+2075  !----------------------------------------------------------------!
+2076   REAL Time_date
+2077     !
+2078   IF NPAR=0 THEN 
+2079      Time_date=TIMEDATE
+2080   ELSE
+2081      Time_date=Input_num
+2082   END IF
+2083     !
+2084   RETURN DATE$(Time_date)
+2085     !
+2086 FNEND
+2087  !
+2088  ! ************************************************************** !
+2089  !
+2090 DEF FNTime$(OPTIONAL REAL Input_num)
+2091 Time: !
+2092   REAL Time
+2093   IF NPAR=0 THEN 
+2094      Time=TIMEDATE MOD 86400
+2095   ELSE
+2096      Time=Input_num MOD 86400
+2097   END IF
+2098   RETURN TIME$(Time)
+2099     !
+2100 FNEND
+2101  !
+2102  ! ************************************************************** !
+2103  !
+2104 DEF FNTrim$(Input_string$)
+2105 Fntrim:          !
+2106   RETURN TRIM$(Input_string$)
+2107 FNEND
+2108  !
+2109  ! ************************************************************** !
+2110  !
+2111 DEF FNUpc$(Input_string$)
+2112 Fnupc:         !
+2113   RETURN UPC$(Input_string$)
+2114 FNEND
+2115  !
+2116  ! ************************************************************** !
+2117  !
+2118 SUB Dump_alpha_scr
+2119 Dump_alpha_scr:    !
+2120  !----------------------------------------------------------------!
+2121  !  This subprogram causes the alpha screen to be dumped to a
+2122  !  printer at 703.
+2123  !----------------------------------------------------------------!
+2124   DUMP DEVICE IS 703
+2125   DUMP ALPHA
+2126 SUBEND
+2127  !
+2128  ! ************************************************************** !
+2129  !
+2130 SUB Dump_graph_scr
+2131 Dump_graph_scr:    !
+2132  !----------------------------------------------------------------!
+2133  !  This subprogram causes the graphics screen to be dumped to a
+2134  !  graphics printer at 703.
+2135  !----------------------------------------------------------------!
+2136   DUMP DEVICE IS 703
+2137   DUMP GRAPHICS
+2138 SUBEND
+2139  !
+2140  ! ************************************************************** !
+2141  !
+2142 SUB Get_menu(File_nme$,Id$,Menu_name$,Menu_rev$,Menu_type$,Menu_level$,Menu_exit$,Menu_label$(*),Disp_line_label$,Menu$(*),INTEGER Menu_size,Loaded_ok)
+2143 Get_menu:  !
+2144  !
+2145  ! ************************************************************** !
+2146  !
+2147  !  o  09/25/86  Modified Enter @Menu;Menu_label$. Menu_label$
+2148  !               redimensioned for 8 while menu revision AA
+2149  !               only contains 5 labels.   DG
+2150  !
+2151  ! ************************************************************** !
+2152  !
+2153  !----------------------------------------------------------------!
+2154   COM /Mass_storage/ Manager_sys$,Menu_storage$
+2155   COM /Mass_storage/ Dir_pointer$,Msus$
+2156  !----------------------------------------------------------------!
+2157   INTEGER I
+2158  !----------------------------------------------------------------!
+2159   Mount_volume(File_nme$,"MENU")
+2160   DISP "Loading Menu :"&File_nme$&"   --STANDBY"
+2161     !
+2162   ON ERROR GOTO Bad_menu
+2163   ASSIGN @Menu TO Menu_storage$&File_nme$&Msus$
+2164     !
+2165   ENTER @Menu;Id$
+2166   ENTER @Menu;Menu_name$,Menu_rev$,Menu_type$,Menu_level$
+2167   ENTER @Menu;Menu_exit$
+2168   !
+2169   FOR I=1 TO 5                   !  MENU REVISION AA only uses 5 labels
+2170      ENTER @Menu;Menu_label$(I)  !  Menu_label$ dimensioned for 8 labels
+2171   NEXT I
+2172   !
+2173   ENTER @Menu;Menu_size
+2174   ENTER @Menu;Disp_line_label$
+2175     !
+2176   ALLOCATE Temp_menu$(1:Menu_size)[80]
+2177   ENTER @Menu;Temp_menu$(*)
+2178     !
+2179   OFF ERROR 
+2180     !
+2181   FOR I=1 TO Menu_size
+2182      Menu$(I)=Temp_menu$(I)
+2183   NEXT I
+2184     !
+2185   Loaded_ok=1
+2186   SUBEXIT
+2187     !
+2188 Bad_menu:     !
+2189     !
+2190   OFF ERROR 
+2191   ASSIGN @Menu TO *
+2192   Clr_scr
+2193   Show_message("ERROR LOADING MENU -- FILE NAME = "&File_nme$,9)
+2194   Show_message("ERROR NUMBER = "&VAL$(ERRN),11)
+2195   Show_message("MENU NOT LOADED",13)
+2196   BEEP 
+2197   Loaded_ok=0
+2198     !
+2199 SUBEND
+2200   !
+2201   !***********************************************************************!
+2202   !
+2203 SUB Jan_common
+2204 Jan_common: !
+2205  !----------------------------------------------------------------!
+2206   COM /Dut_data/ Status$(1:60)[6]
+2207   COM /Dut_data/ INTEGER Num_pass(1:60),Num_fail(1:60)
+2208   COM /Dut_data/ REAL Total_test_time(1:60),Start_test_time
+2209   COM /Dut_data/ REAL End_test_time,Test_process$[16000]
+2210   COM /Elapse_time/ REAL Elapse_time
+2211  !----------------------------------------------------------------!
+2212   COM /Identification/ Serial_num$[10],Option$(1:16)[3],Tech_num$[8]
+2213   COM /Identification/ INTEGER Station_num,Batch
+2214  !----------------------------------------------------------------!
+2215   COM /Janitor_mode/ Janitor_mode$
+2216  !----------------------------------------------------------------!
+2217   COM /Janitor/ INTEGER Depend(1:60,1:60)
+2218  !----------------------------------------------------------------!
+2219   COM /Jan_storage/ Test$[50],Depend_stg$[50],Driver$[50]
+2220   COM /Jan_storage/ Tech$[50],Device$[50]
+2221  !----------------------------------------------------------------!
+2222   COM /Memory_manage/ Drivers_in_mem$(1:5)[16]
+2223  !----------------------------------------------------------------!
+2224 SUBEND
+2225  !
+2226  ! ************************************************************** !
+2227  !
+
+
+
+
+2228 SUB Hp_834x_com
+2229 Hp_834x_com: !
+2230  !----------------------------------------------------------------!
+2231   COM /Hpib_codes/ @D1,@D2,@D3,@D4,@D5,@D6,@D7,@D8,@D9,@D10
+2232   COM /Hpib_codes/ @D11,@D12,@D13,@D14,@D15,@D16
+2233   COM /Equipment/ Dvm$[6],Mod_an$[6]
+2234  !----------------------------------------------------------------!
+2235   COM /User_data/ U1(0:20),U2(0:8),Pwr_sensor(0:34,1:2),U4(0:250)
+2236   COM /User_data/ User(0:256,1:2)
+2237  !----------------------------------------------------------------!
+2238   COM /Power_data/ Power_data(0:3,0:300)
+2239   COM /Power_data/ INTEGER Num_of_freqs,Num_of_pwrs
+2240   COM /Power_data/ INTEGER S_n,Data_mode,Rev_code$[50]
+2241  !----------------------------------------------------------------!
+2242   COM /Cal_limits/ INTEGER Cal_ucl(1:100),Cal_lcl(1:100)
+2243  !----------------------------------------------------------------!
+2244   COM /Cal_names/ Cal_names$[1400]
+2245  !----------------------------------------------------------------!
+2246   COM /Peripherals/ INTEGER Print,Kbd,Crt
+2247  !----------------------------------------------------------------!
+2248   COM /Dut_has/ Feature_list$(16)[20],Last_model$[6],INTEGER Last_config
+2249  !----------------------------------------------------------------!
+2250   COM /Chamber/ Temperature,Humidity,INTEGER Set_flag,Power_on_flag
+2251  !----------------------------------------------------------------!
+2252 SUBEND
+2253  !
+2254  ! ************************************************************** !
+2255  !
+
+
+
+
+2256 SUB Fs_common
+2257 Fs_common: !
+2258  !-----------------------------------------------------------------!
+2259   COM /Dut_storage/ Dut_dir$[50],Dut_msus$[50]
+2260   COM /Enhancements/ On$[1],Off$[1],Flash$[1]
+2261  !-----------------------------------------------------------------!
+2262   On$=CHR$(129)
+2263   Off$=CHR$(128)
+2264   Flash$=CHR$(131)
+2265 SUBEND
+2266  !
+2267  !*********************************************************************!
+2268  !
+2269 SUB If_atten_cal
+2270 If_atten_cal: !
+2271  !*************************************
+2272  !     ROUTINE TO ENTER REFERENCE
+2273  !      ATTENUATOR CAL NUMBERS
+2274  !
+2275  !  10.15.82     JT
+2276  !
+2277  ! 04.8.83   Moved directory  - MS
+2278  ! 04.11.83  Added return to overhead
+2279  ! 01.3.86   Modified for field service JT
+2280  ! 07.1.86   Replaced Manager_sys$ and Msus$ with Calfactor_dir$ and
+2281  !           Cf_Msus$.  DG
+2282  ! 11.25.86  Replaced Calfactor_dir$ and Cf_msus$ with Manager_sys$ and
+2283  !           Msus$.  DG
+2284  ! 01.06.87  Added Cal_due_date$ to data stored in power sensor data file.
+2285  !           Also added print key to display sensor data and due date. DG
+2286  !*************************************
+2287  !
+2288   OPTION BASE 0
+2289   COM /Mass_storage/ Manager_sys$,Menu_storage$
+2290   COM /Mass_storage/ Dir_pointer$,Msus$
+2291   DIM At_cal(8)
+2292   DIM Serial$[20],Cal_due_date$[20]
+2293 Entry: !
+2294   Clr_scr
+2295   Mount_volume("ATTEN DATA","CAL FACTORS")
+2296   !
+2297   PRINT " *****************************************"
+2298   PRINT " *** TEST SYSTEM ATTENUATOR CAL FACTORS ***"
+2299   PRINT " ***        DATA FILE CREATOR           ***"
+2300   PRINT " *****************************************"
+2301   PRINT 
+2302   PRINT "  SELECT A KEY :"
+2303   PRINT 
+2304   PRINT "    Start:    Create cal factor file."
+2305   PRINT 
+2306   PRINT "    Display:  View stored cal factors."
+2307   PRINT 
+2308   PRINT "    RETURN:   Return to previous menu."
+2309        !
+2310   OFF KEY 
+2311   ON KEY 5 LABEL "Start" GOTO Start
+2312   ON KEY 7 LABEL "Display" GOTO Display
+2313   ON KEY 9 LABEL "RETURN" GOTO Exit_refatn_cal
+2314        !
+2315   BEEP 550,.02
+2316   BEEP 650,.02
+2317   BEEP 750,.02
+2318        !
+2319 Loopp:GOTO Loopp
+2320        !
+2321 Exit_refatn_cal:       !
+2322   SUBEXIT
+2323        !
+2324 Start: !
+2325   GOSUB Input_atten_id
+2326   !
+2327 Enter_constants: !
+2328   Clr_scr
+2329   PRINT "**************************************************"
+2330   PRINT 
+2331   PRINT "When prompted, enter the actual attenuation (not"
+2332   PRINT "the incremental error) for each attenuator step."
+2333   PRINT 
+2334   PRINT "The values entered should be for a calibration"
+2335   PRINT "frequency of 1 MHz."
+2336   PRINT 
+2337   PRINT "**************************************************"
+2338   FOR Atten=10 TO 70 STEP 10
+2339      DISP "ENTER ACTUAL ATTENUATION(dB) FOR THE";Atten;"dB STEP";
+2340      BEEP 650,.02
+2341      INPUT "",Step_acc
+2342      Number=ABS(Step_acc)-Atten
+2343      At_cal(Atten/10)=Number
+2344      DISP 
+2345   NEXT Atten
+2346  !
+2347   Clr_scr
+2348   PRINT "  *** ATTENUATOR CAL FACTOR FILE CREATE ***"
+2349   PRINT 
+2350   PRINT " Nominal setting     Actual attenuation (dB)"
+2351   PRINT " _______________     _______________________"
+2352   PRINT 
+2353   FOR Atten=10 TO 70 STEP 10
+2354      PRINT "    ";Atten;" dB                   ";At_cal(Atten/10)+Atten
+2355   NEXT Atten
+2356   PRINT 
+2357   IF FNYes("IS EVERYTHING CORRECT ?") THEN GOTO Ok
+2358   GOTO Enter_constants
+2359  !
+2360 Ok: !
+2361   Clr_scr
+2362   LOOP
+2363      INPUT "Enter the month and year the Cal is due (MM.YY).",Cal_due_date$
+2364   EXIT IF LEN(Cal_due_date$)=5
+2365      DISP "Enter 5 characters in the format shown (MM.YY)!!"
+2366      WAIT 3
+2367   END LOOP
+2368   IF NOT FNYes("Is the Calibration Due Date "&Cal_due_date$&" correct?") THEN GOTO Ok
+2369   At_cal(0)=0
+2370   At_cal(8)=VAL(Serial$[3,8])
+2371  !
+2372 Create_file: !
+2373   Mount_volume(Serial$,"CAL FACTORS")
+2374   ON ERROR GOTO File_exists
+2375   DISP "CREATING : ";Manager_sys$&Serial$&Msus$
+2376   CREATE BDAT Manager_sys$&Serial$&Msus$,1
+2377   OFF ERROR 
+2378 Store_data: !
+2379   ASSIGN @File TO Manager_sys$&Serial$&Msus$
+2380   DISP "WRITING DATA"
+2381   OUTPUT @File;At_cal(*),Cal_due_date$
+2382   ASSIGN @File TO *
+2383  !
+2384   GOTO Entry
+2385  !
+2386 File_exists:OFF ERROR 
+2387   Error=ERRN
+2388   IF Error=54 THEN 
+2389      IF FNYes("FILE EXISTS -- DO YOU WANT TO WRITE OVER IT ?") THEN 
+2390         GOTO Store_data
+2391      ELSE
+2392         Clr_scr
+2393         PRINT "**************************************************"
+2394         PRINT 
+2395         PRINT "The program is now paused.  Since you do not wish"
+2396         PRINT "to write over the old file (";Serial$;"), you need to"
+2397         PRINT "access your disc and RENAME the file.  After you"
+2398         PRINT "have renamed the file, press the continue key on"
+2399         PRINT "your keyboard to proceed with the program."
+2400         PRINT 
+2401         PRINT "**************************************************"
+2402        !
+2403         DISP "RENAME OLD FILE, THEN PUSH CONTINUE"
+2404         PAUSE
+2405         DISP 
+2406         GOTO Create_file
+2407      END IF
+2408   ELSE
+2409      DISP ERRM$
+2410      PAUSE
+2411      GOTO Create_file
+2412   END IF
+2413   !
+2414 Display:   !
+2415   OFF KEY 
+2416   Clr_scr
+2417   GOSUB Input_atten_id
+2418   ON ERROR GOTO No_file
+2419   ASSIGN @Dat TO Manager_sys$&Serial$&Msus$
+2420   OFF ERROR 
+2421   ENTER @Dat;At_cal(*)
+2422   ON ERROR GOTO No_cal_due_date
+2423   ENTER @Dat;Cal_due_date$
+2424   OFF ERROR 
+2425   !
+2426 Display_data:  !
+2427   Clr_scr
+2428   PRINT "**************************************************"
+2429   PRINT 
+2430   PRINT "IF Attenuator Calibration Data for S/N "&Serial$
+2431   PRINT 
+2432   IF Cal_due_date$<>"" THEN 
+2433      PRINT "Calibration Due: ";Cal_due_date$
+2434      PRINT 
+2435   END IF
+2436   PRINT " Nominal setting     Actual attenuation (dB)"
+2437   PRINT " _______________     _______________________"
+2438   PRINT 
+2439   FOR Atten=10 TO 70 STEP 10
+2440      PRINT "    ";Atten;" dB                   ";At_cal(Atten/10)+Atten
+2441   NEXT Atten
+2442   PRINT 
+2443   PRINT "**************************************************"
+2444   ON KEY 5 LABEL "CarryOn" GOTO Entry
+2445   BEEP 2000,.1
+2446   BEEP 2500,.1
+2447   LOOP
+2448   END LOOP
+2449   !
+2450 No_cal_due_date: !
+2451   OFF ERROR 
+2452   Cal_due_date$=""
+2453   GOTO Display_data
+2454   !
+2455 No_file:   !
+2456   OFF ERROR 
+2457   IF FNYes("Data file does not exist. Want to try again?") THEN 
+2458      GOTO Display
+2459   ELSE
+2460      GOTO Entry
+2461   END IF
+2462 Input_atten_id:   !
+2463   OFF KEY 
+2464   Clr_scr
+2465   PRINT "*******************************************"
+2466   PRINT 
+2467   PRINT " Enter the serial no. of the attenuator as "
+2468   PRINT " printed on the CALIBRATION STICKER."
+2469   PRINT 
+2470   PRINT "*******************************************"
+2471   BEEP 400,.1
+2472   LOOP
+2473      DISP "ENTER 8 characters or less";
+2474      BEEP 700,.1
+2475      INPUT "",Serial$
+2476   EXIT IF LEN(Serial$)>0 AND LEN(Serial$)<9
+2477      DISP "8 CHARACTERS OR LESS--READ MY LIPS !!"
+2478      BEEP 700,1.5
+2479   END LOOP
+2480   IF NOT FNYes("Is S/N "&Serial$&" correct?") THEN GOTO Input_atten_id
+2481   RETURN 
+2482  !
+2483 SUBEND
+2484   !
+2485  !****************************************************************!
+2486  !
+2487 DEF FNYes(Prompt$)
+2488 Fnyes: !
+2489  !----------------------------------------------------------------!
+2490  !
+2491  !----------------------------------------------------------------!
+2492   DISP Prompt$
+2493   BEEP 
+2494   OFF KEY 
+2495   ON KEY 5 LABEL "YES" GOTO Yes
+2496   ON KEY 9 LABEL "NO" GOTO No
+2497     !
+2498   LOOP
+2499   END LOOP
+2500     !
+2501 Yes:DISP 
+2502   RETURN 1
+2503     !
+2504 No:DISP 
+2505   RETURN 0
+2506     !
+2507 FNEND
+2508  ! ************************************************************** !
+2509  !
+
+
+
+
+
+2510 SUB Pwr_sensor
+2511 Pwr_sensor: !
+2512  !-------------------------------------------
+2513  !  8485 POWER SENSOR CALIBRATION FACTOR
+2514  !          DATA FILE LOADER
+2515  !
+2516  !  4.19.82                 MS
+2517  !  8. 4.82  ...modified    JT
+2518  !  4.8.83   moved to GANGLIA file    ms
+2519  !  4.11.83  added return to overhead jt
+2520  !  7.1.86   Replaced Manager_sys$ and Msus$ with Calfactor_dir$ and
+2521  !           Cf_msus$.  DG
+2522  ! 11.25.86  Replaced Calfactor_dir$ and Cf_msus$ with Manager_sys$ and
+2523  !           and Msus$.  DG
+2524  ! 12.19.86  Added Cal_due_date$ to data stored in power sensor data file.
+2525  !           Also added print key to display sensor data and due date. DG
+2526  !-------------------------------------------
+2527  !
+2528  !
+2529   OPTION BASE 1
+2530  !------------------------------------------------------
+2531   COM /Mass_storage/ Manager_sys$,Menu_storage$
+2532   COM /Mass_storage/ Dir_pointer$,Msus$
+2533  !------------------------------------------------------
+2534   DIM Cal_freq(34),Cal_factor(34),Cal_data(0:34,2),Cal_due_date$[20]
+2535  !
+2536  !
+2537 Entry:Clr_scr
+2538   Mount_volume("8485A DATA","CAL FACTORS")
+2539  !
+2540   PRINT "       ************************************"
+2541   PRINT "       ****  POWER SENSOR CALIBRATION  ****"
+2542   PRINT "       ****        DATA SET UP         ****"
+2543   PRINT "       ************************************"
+2544   PRINT 
+2545   PRINT "    SELECT A KEY:"
+2546   PRINT 
+2547   PRINT "    Start:   Start power sensor cal data input."
+2548   PRINT 
+2549   PRINT "    Display: View stored power sensor data."
+2550   PRINT 
+2551   PRINT "    RETURN:  RETURN to previous menu."
+2552         !
+2553   OFF KEY 
+2554   ON KEY 5 LABEL "Start" GOTO Start
+2555   ON KEY 7 LABEL "Display" GOTO Display
+2556   ON KEY 9 LABEL "RETURN" GOTO Exit_sensor_cal
+2557         !
+2558   BEEP 550,.02
+2559   BEEP 650,.02
+2560   BEEP 750,.02
+2561         !
+2562 Loopp:GOTO Loopp
+2563         !
+2564 Exit_sensor_cal:        !
+2565   SUBEXIT
+2566         !
+2567 Start: !
+2568   OFF KEY 
+2569   Clr_scr
+2570   PRINT USING "@"
+2571   PRINT "**************************************************"
+2572   PRINT 
+2573   PRINT "CAL FACTOR LOADER :"
+2574   PRINT 
+2575   PRINT "Before entering the calibration data for the HP"
+2576   PRINT "8485A power sensor, you must determine the CAL"
+2577   PRINT "FACTOR % for the power sensor at 10 MHz. Refer"
+2578   PRINT "to the 10 MHz Calibration Procedure in the"
+2579   PRINT "software manual.  The value obtained from this"
+2580   PRINT "procedure should be entered for the 10 MHz point."
+2581   PRINT 
+2582   PRINT "**************************************************"
+2583     !
+2584   GOSUB Input_sensor_id
+2585   FOR Cal_no=1 TO 34
+2586  !
+2587  !
+2588 Calc_frequency: !
+2589      SELECT Cal_no
+2590      CASE 1
+2591         Freq=.01
+2592      CASE 2
+2593         Freq=.05
+2594      CASE 3 TO 12
+2595         Freq=Cal_no-1
+2596      CASE 13
+2597         Freq=12.4
+2598      CASE 14 TO 21
+2599         Freq=Cal_no-1
+2600      CASE 22 TO 34
+2601         Freq=(Cal_no-21)*.5+20
+2602      END SELECT
+2603      Cal_freq(Cal_no)=Freq
+2604!
+2605 Enter_cal:!
+2606      DISP "ENTER CAL FACTOR FOR ";Cal_freq(Cal_no);" [XX.XX%]";
+2607      INPUT Cal_factor(Cal_no)
+2608      IF Cal_factor(Cal_no)>100 OR Cal_factor(Cal_no)<1 THEN 
+2609         DISP "CAL FACTOR MUST BE BETWEEN 1 AND 100 % !!!"
+2610         BEEP 1000,.2
+2611         WAIT 1.5
+2612         GOTO Enter_cal
+2613      END IF
+2614      PRINT Cal_freq(Cal_no),Cal_factor(Cal_no)
+2615   NEXT Cal_no
+2616!
+2617 Fmt1:IMAGE  2D.3D,2X,3D.2D,"  |  ",2D.3D,2X,3D.2D
+2618!
+2619!
+2620 Print_cal:!
+2621   Clr_scr
+2622   PRINT " Freq   Value       Freq   Value"
+2623   FOR I=1 TO 17
+2624      PRINT USING Fmt1;Cal_freq(I),Cal_factor(I),Cal_freq(I+17),Cal_factor(I+17)
+2625   NEXT I
+2626!
+2627 Pack_cal_data:!
+2628   FOR I=1 TO 34
+2629      Cal_data(I,1)=Cal_freq(I)
+2630      Cal_data(I,2)=Cal_factor(I)
+2631   NEXT I
+2632!
+2633   Cal_data(0,1)=VAL(Id_no$)
+2634!
+2635!
+2636 Check_em:!
+2637   IF FNYes("ARE THESE CORRECT ?") THEN 
+2638      GOTO Ok
+2639   ELSE
+2640      GOTO Edit
+2641   END IF
+2642!
+2643 Edit:!
+2644   DISP "ENTER FREQUENCY THAT IS INCORRECT :";
+2645   INPUT Freq
+2646   Found_it=0
+2647   FOR I=1 TO 34
+2648      IF Cal_freq(I)=Freq THEN Found_it=I
+2649   NEXT I
+2650   IF Found_it=0 THEN 
+2651      DISP "FREQUENCY NOT FOUND IN LIST !!!!"
+2652      BEEP 1000,.5
+2653      WAIT 1.5
+2654      GOTO Check_em
+2655   END IF
+2656!
+2657!
+2658 Correct_cal:   !
+2659   DISP "ENTER CORRECT CAL FACTOR FOR ";Freq;
+2660   INPUT Factor
+2661   IF Factor<1 OR Factor>100 THEN 
+2662      DISP "CAL FACTOR MUST BE BETWEEN 1 AND 100 % !!!"
+2663      BEEP 1000,.4
+2664      GOTO Correct_cal
+2665   END IF
+2666   Cal_factor(Found_it)=Factor
+2667   GOTO Print_cal
+2668!
+2669!
+2670 Ok:!
+2671   Clr_scr
+2672   LOOP
+2673      INPUT "Enter the month and year the Cal is due (MM.YY).",Cal_due_date$
+2674   EXIT IF LEN(Cal_due_date$)=5
+2675      DISP "Enter 5 characters in format shown (MM.YY)!!"
+2676      WAIT 3
+2677   END LOOP
+2678   IF NOT FNYes("Is the Calibration Due Date "&Cal_due_date$&" correct?") THEN GOTO Ok
+2679   !
+2680   IF FNYes("IS SERIAL #"&Id_no$&" CORRECT ?") THEN 
+2681      GOTO Record_file
+2682   ELSE
+2683      GOSUB Input_sensor_id
+2684   END IF
+2685   GOTO Ok
+2686!
+2687!
+2688 Record_file:!
+2689   ON ERROR GOSUB Create_file
+2690   ASSIGN @Dat TO Manager_sys$&"8485A"&Id_no$[1,5]&Msus$
+2691   OFF ERROR 
+2692   OUTPUT @Dat;Cal_data(*),Cal_due_date$
+2693   ASSIGN @Dat TO *
+2694   DISP "DONE !!"
+2695   BEEP 700,.2
+2696   WAIT 1
+2697   GOTO Entry
+2698!
+2699 Input_sensor_id: !
+2700   LOOP
+2701      INPUT "WHAT IS THE 8485A SERIAL #  [LAST 5 digits]",Id_no$
+2702   EXIT IF LEN(Id_no$)=5
+2703      DISP "5 DIGITS PLEASE!!!!"
+2704      BEEP 
+2705      WAIT 1.5
+2706   END LOOP
+2707   RETURN 
+2708!
+2709 Create_file:!
+2710   IF ERRN<>56 THEN 
+2711      DISP "ERROR # ";ERRN
+2712      STOP
+2713   END IF
+2714   CREATE BDAT Manager_sys$&"8485A"&Id_no$[1,5]&Msus$,3
+2715   RETURN 
+2716   !
+2717 Display:   !
+2718   OFF KEY 
+2719   Clr_scr
+2720   GOSUB Input_sensor_id
+2721   ON ERROR GOTO No_file
+2722   ASSIGN @Dat TO Manager_sys$&"8485A"&Id_no$[1,5]&Msus$
+2723   OFF ERROR 
+2724   ENTER @Dat;Cal_data(*)
+2725   ON ERROR GOTO No_cal_due_date
+2726   ENTER @Dat;Cal_due_date$
+2727   OFF ERROR 
+2728   !
+2729 Display_data:  !
+2730   Clr_scr
+2731   PRINT "Power Sensor Data for HP 8485A S/N ";Id_no$
+2732   IF Cal_due_date$<>"" THEN 
+2733      PRINT 
+2734      PRINT "Calibration Due: ";Cal_due_date$
+2735   END IF
+2736   PRINT 
+2737   PRINT " Freq   Value       Freq   Value"
+2738   FOR I=1 TO 17
+2739      PRINT USING Fmt1;Cal_data(I,1),Cal_data(I,2),Cal_data(I+17,1),Cal_data(I+17,2)
+2740   NEXT I
+2741   ON KEY 5 LABEL "CarryOn" GOTO Entry
+2742   BEEP 2000,.1
+2743   BEEP 2500,.1
+2744   LOOP
+2745   END LOOP
+2746   !
+2747 No_file:   !
+2748   OFF ERROR 
+2749   IF FNYes("Data file does not exist. Want to try again?") THEN 
+2750      GOTO Display
+2751   ELSE
+2752      GOTO Entry
+2753   END IF
+2754   !
+2755 No_cal_due_date:   !
+2756   OFF ERROR 
+2757   Cal_due_date$=""
+2758   GOTO Display_data
+2759 SUBEND
+2760 !
+2761 Check_keyboard:DEF FNCheck_keyboard
+2762 !  *********************************************************************
+2763 !  The following polls register 9 of the keyboard to determine if it is
+2764 !  a HIL keyboard. If so, a 1 is returned.  If not, 0 is returned.
+2765 !  **********************************************************************
+2766     !
+2767   STATUS 2,9;Kbd_reg
+2768   IF BIT(Kbd_reg,5) THEN 
+2769      RETURN 1
+2770   ELSE
+2771      RETURN 0
+2772   END IF
+2773 FNEND
+2774     !
+2775 Mgr_end: !
+2776 Secure_4_end: ! ** Secure from Secure_4_start to Secure_4_end **

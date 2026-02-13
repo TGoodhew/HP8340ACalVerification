@@ -1,0 +1,670 @@
+1     !**************************************************
+2     !*                                                *
+3     !*  Copyright (C) Hewlett-Packard Co. 1986,1987   *
+4     !*                                                *
+5     !**************************************************
+6     !
+7     !  HP 8340A/B & HP 8341A/B TEST SOFTWARE COPY PROGRAM
+8     !****************************
+9     !  REVISION DATE: 03/10/87  *
+10    !****************************
+11    OUTPUT 2;"�# SCRATCH K �X";
+12    !
+13    DIM File_name$(1:60)[12]
+14    COM /Storage/ Msus_dir$[40],Msus$[40],Dest_dir$[40],Dest_msus$[40]
+15    DIM Disc_number$[9],Software$[11],Mass_stg_sys$[12]
+16    INTEGER Memory_disc,I
+17    Memory_disc=0
+18    I=1
+19    !
+20    Msus_dir$="" ! * Directory for the master disc. Remember to add slashes. *
+21    Msus$=":,700,1"
+22    !
+23    Dest_dir$="" !  ** Directory for the copy. Remember to add slashes. **
+24    Dest_msus$=":,700,0"
+25    !
+26    !
+27    Clr_scr
+28    !
+29    !  The following polls register 9 of the keyboard to determine
+30    !  if it is a HIL keyboard. If so, compatibility mode is activated.
+31    !
+32    STATUS 2,9;Kbd_reg
+33    IF BIT(Kbd_reg,5) THEN 
+34       CONTROL KBD,15;1
+35       PRINT "**************************************************"
+36       PRINT 
+37       PRINT "The keyboard's Compatibility Mode has been"
+38       PRINT "enabled.  If you need to use the keyboard's 'RUN'"
+39       PRINT "or 'Continue' key while in this mode, you must"
+40       PRINT "simultaneously press: "
+41       PRINT 
+42       PRINT "      'Extend Char' and 'f2' to CONTINUE or"
+43       PRINT 
+44       PRINT "      'Extend Char' and 'f3' to RUN."
+45       PRINT 
+46       PRINT "**************************************************"
+47       WAIT 10
+48       Clr_scr
+49    END IF
+50  !
+51 Start:    !
+52    Clr_scr
+53    !
+54    PRINT "**************************************************"
+55    PRINT 
+56    PRINT "This program will copy the master disc(s) of the"
+57    PRINT "HP 8340A/B and 8341A/B Test Software to either a"
+58    PRINT "fixed disc or another floppy disc."
+59    PRINT 
+60    PRINT "The current address assigned to the disc drive"
+61    PRINT "containing the test software's MASTER DISC is:"
+62    PRINT 
+63    PRINT "              '"&Msus_dir$&Msus$&"'"
+64    PRINT 
+65    PRINT "The current address for the COPY disc drive is:"
+66    PRINT 
+67    PRINT "              '"&Dest_dir$&Dest_msus$&"'"
+68    PRINT 
+69    PRINT "**************************************************"
+70    IF FNYes("Are the above address correct?") THEN GOTO Next_step
+71    !
+72 New_address:    !
+73    !
+74    !   This portion of the program asks the operator to enter the
+75    !   address of disc drive containing the master disc and address
+76    !   of the disc drive containing the copy.
+77    !
+78    Clr_scr
+79    PRINT "**************************************************"
+80    PRINT 
+81    PRINT "Does either the address of the master disc drive"
+82    PRINT "or the address of the copy disc drive use a"
+83    PRINT "directory pointer?"
+84    PRINT 
+85    PRINT "**************************************************"
+86    IF NOT FNYes("") THEN GOTO Next_question
+87    !
+88 Input_directory:     !
+89    Clr_scr
+90    PRINT "**************************************************"
+91    PRINT 
+92    PRINT "Enter the DIRECTORY for the disc drive containing"
+93    PRINT "the test software's MASTER disc."
+94    PRINT 
+95    PRINT "   For example: '/8340TEST/MASTER/'"
+96    PRINT 
+97    PRINT "Remember to include the slashes and quote marks"
+98    PRINT "on both ends of the directory."
+99    PRINT 
+100   PRINT "**************************************************"
+101   !
+102   INPUT "Input the MASTER disc's DIRECTORY.",Msus_dir$
+103   !
+104   Clr_scr
+105   PRINT "**************************************************"
+106   PRINT 
+107   PRINT "Enter the DIRECTORY for the disc drive containing"
+108   PRINT "the disc on which the COPY will be made."
+109   PRINT 
+110   PRINT "   For example: '/8340TEST/COPY/'"
+111   PRINT 
+112   PRINT "Remember to include the slashes and quote marks"
+113   PRINT "on both ends of the directory."
+114   PRINT 
+115   PRINT "**************************************************"
+116   !
+117   INPUT "Input the DIRECTORY for the COPY.",Dest_dir$
+118   !
+119 Next_question:   !
+120   Clr_scr
+121   !
+122   PRINT "**************************************************"
+123   PRINT 
+124   PRINT "Enter the ADDRESS for the disc drive containing"
+125   PRINT "the test software's MASTER disc."
+126   PRINT 
+127   PRINT "     For Example:  ':,700,0'  or  ':REMOTE'"
+128   PRINT 
+129   PRINT "**************************************************"
+130   !
+131   INPUT "Enter the ADDRESS of the MASTER, use quotes.",Msus$
+132   !
+133   Clr_scr
+134   !
+135   PRINT "**************************************************"
+136   PRINT 
+137   PRINT "Enter the ADDRESS for the disc drive containing"
+138   PRINT "the disc on which the COPY will be made."
+139   PRINT 
+140   PRINT "     For Example:  ':,700,1'  or  ':REMOTE'"
+141   PRINT 
+142   PRINT "**************************************************"
+143   !
+144   INPUT "Enter the ADDRESS of the COPY, use quotes.",Dest_msus$
+145   !
+146   Clr_scr
+147   PRINT "****************************************"
+148   PRINT 
+149   PRINT "The address of the MASTER disc is:"
+150   PRINT 
+151   PRINT "   '"&Msus_dir$&Msus$&"'"
+152   PRINT 
+153   PRINT "The address of the COPY is:"
+154   PRINT 
+155   PRINT "   '"&Dest_dir$&Dest_msus$&"'"
+156   PRINT 
+157   PRINT "****************************************"
+158   IF NOT FNYes("Are the above addresses correct?") THEN GOTO New_address
+159   !
+160 Next_step:    !
+161   !
+162   Get_disc("DISC 1","MASTER",0,Software$,Mass_stg_sys$)
+163   !
+164   ! Load the DATA into File_name$
+165   !
+166   SELECT Software$
+167   CASE "PERFORMANCE"
+168      GOSUB Perf_data
+169   CASE "OP VER"
+170      GOSUB Op_ver_data
+171   END SELECT
+172   !
+173   ! Call COPY Subprogram
+174   !
+175   IF Msus_dir$&Msus$=Dest_dir$&Dest_msus$ THEN 
+176      One_drive_copy(File_name$(*),Software$,Mass_stg_sys$)
+177   ELSE
+178      Two_drive_copy(File_name$(*),Software$,Mass_stg_sys$)
+179   END IF
+180   !
+181 Done:   !
+182   Clr_scr
+183   DISP "Copy complete."
+184   FOR I=1 TO 3
+185      BEEP I*850,.1
+186   NEXT I
+187   WAIT 2
+188   IF Memory_disc=1 THEN 
+189      OUTPUT 2;"�# SCRATCH A �X";
+190   END IF
+191   GOTO Program_end
+192   !
+193 Perf_data:   !
+194   RESTORE Disc_1_perf
+195   GOSUB Read_data
+196   SELECT Mass_stg_sys$
+197   CASE "SINGLE"
+198      RESTORE Ss_perf_data
+199   CASE "DOUBLE SIDED"
+200      RESTORE Ds_perf_data
+201   END SELECT
+202   GOSUB Read_data
+203   RETURN 
+204   !
+205 Disc_1_perf: !
+206   DATA DISC 1
+207   DATA LABEL,FS_MANAGER
+208   DATA FSV8340AAA,FSV8340AMS,FSP8340AAA,FSP8340AMS
+209   DATA FSV8341AAA,FSV8341AMS,FSP8341AAA,FSP8341AMS
+210   DATA FSV8340BAA,FSV8340BMS,FSP8340BAA,FSP8340BMS
+211   DATA FSV8341BAA,FSV8341BMS,FSP8341BAA,FSP8341BMS
+212   DATA FSV8340XAA,FSV8340XMS,FSP8340XAA,FSP8340XMS
+213   DATA Cal_co,Thrash,Cw_acc
+214   DATA DONE
+215   !
+216 Ss_perf_data:   !  Test order on Single Sided Performance Test discs.
+217   !
+218   DATA DISC 2,LABEL,JANITOR
+219   DATA DISC 3,LABEL,Swptim,Fre_sw,Alc_ad,Pwracc,Max_le
+220   DATA DISC 4,LABEL,Pwr_sw,Ext_le,Spurs_,Freq_a,Am_acc,Am_fla,H02dis
+221   DATA DISC 5,LABEL,Fm_ver,Harmon,Pha_no,At_cal
+222   DATA END
+223   !
+224 Ds_perf_data:  !  Test order on Double Sided Performance Test discs.
+225   !
+226   DATA Swptim,Fre_sw,Alc_ad,JANITOR  !  Still DISC 1
+227   DATA DISC 2,LABEL,Pwracc,Max_le,Pwr_sw,Ext_le,Spurs_,Freq_a,Am_acc,Am_fla,H02dis,Fm_ver,Harmon,Pha_no,At_cal
+228   DATA END
+229   !
+230   !
+231 Op_ver_data:   !
+232   RESTORE Disc_1_op_ver
+233   GOSUB Read_data
+234   SELECT Mass_stg_sys$
+235   CASE "SINGLE"
+236      RESTORE Ss_op_ver_data
+237   CASE "DOUBLE SIDED"
+238      RESTORE Ds_op_ver_data
+239   END SELECT
+240   GOSUB Read_data
+241   RETURN 
+242   !
+243 Disc_1_op_ver: !
+244   DATA DISC 1
+245   DATA LABEL,FS_MANAGER
+246   DATA FSV8340AAA,FSV8340AMS,FSC8340AAA,FSC8340AMS
+247   DATA FSV8341AAA,FSV8341AMS,FSC8341AAA,FSC8341AMS
+248   DATA FSV8340BAA,FSV8340BMS,FSC8340BAA,FSC8340BMS
+249   DATA FSV8341BAA,FSV8341BMS,FSC8341BAA,FSC8341BMS
+250   DATA FSV8340XAA,FSV8340XMS,FSC8340XAA,FSC8340XMS
+251   DATA Fre_sw,At_cal
+252   DATA DONE
+253 Ss_op_ver_data:  !  Test order on Single Sided Operation Verification discs.
+254   !
+255   DATA DISC 2,LABEL,JANITOR,Cal_co,Thrash
+256   DATA DISC 3,LABEL,Cw_acc,Alc_ad,Pwracc,Max_le
+257   DATA END
+258   !
+259 Ds_op_ver_data:  !  Test order on Double Sided Operation Verification discs.
+260   !
+261   DATA Cal_co,Thrash,Cw_acc,Alc_ad,Pwracc,Max_le,JANITOR  !  Still DISC 1
+262   DATA END
+263   !
+264 Read_data:   !
+265   LOOP
+266      READ File_name$(I)
+267   EXIT IF File_name$(I)="DONE" OR File_name$(I)="END"
+268      I=I+1
+269   END LOOP
+270   RETURN 
+271      !
+272 Program_end: !
+273   END
+274   !
+275   SUB Clr_scr
+276 Clr_scr: !
+277   !----------------------------------------------------------------!
+278   !  This subprogram outputs to the key board a clear screen command
+279   !----------------------------------------------------------------!
+280      !
+281      OUTPUT 2;CHR$(255)&"K";
+282      !
+283   SUBEND
+284   !
+285   ! ************************************************************** !
+286   !
+287   DEF FNYes(Prompt$)
+288 Fnyes:  !
+289   !----------------------------------------------------------------!
+290   !
+291   !----------------------------------------------------------------!
+292      DISP Prompt$
+293      BEEP 
+294      OFF KEY 
+295      ON KEY 5 LABEL "YES" GOTO Yes
+296      ON KEY 9 LABEL "NO" GOTO No
+297      !
+298      LOOP
+299      END LOOP
+300      !
+301 Yes: DISP 
+302      RETURN 1
+303      !
+304 No:  DISP 
+305      RETURN 0
+306      !
+307   FNEND
+308   ! ************************************************************** !
+309   !
+
+
+
+
+
+310   SUB Wait_for_cont(OPTIONAL INTEGER Delay)
+311 Wait_for_cont:  !
+312   !----------------------------------------------------------------!
+313   !  This subprogram will setup a key menu with only a 'Carry On'
+314   !  key. If the optional parameter 'Delay' is included then this
+315   !  subprogram will auto continue after the specifed number of
+316   !  seconds.
+317   !----------------------------------------------------------------!
+318      REAL Start_delay
+319      INTEGER Auto_continue
+320   !----------------------------------------------------------------!
+321      OFF KBD
+322      OFF KEY 
+323      ON KEY 5 LABEL "CarryOn",8 GOTO Carry_on
+324      !
+325      DISP "Press k5 ""CarryOn"" when ready to continue."
+326      BEEP 2000,.1
+327      BEEP 2500,.1
+328      !
+329      IF NPAR=1 THEN Auto_continue=ABS(Delay)
+330      Start_delay=TIMEDATE
+331      !
+332      REPEAT
+333      UNTIL Auto_continue AND (TIMEDATE-Start_delay>Auto_continue)
+334      !
+335 Carry_on:  !
+336      DISP 
+337   SUBEND
+338   !
+339   ! ************************************************************** !
+340   !
+341   SUB Two_drive_copy(File_name$(*),Software$,Mass_stg_sys$)
+342   ! ************************************************************** !
+343      COM /Storage/ Msus_dir$,Msus$,Dest_dir$,Dest_msus$
+344      INTEGER Fixed
+345      Fixed=0
+346   ! ************************************************************** !
+347 Two_drive_copy:  !
+348      OFF KEY 
+349      Clr_scr
+350      PRINT "**************************************************"
+351      PRINT 
+352      PRINT "Select the type of media you are copying the Test"
+353      PRINT "Software to:"
+354      PRINT 
+355      PRINT "     FIXED:  Fixed Disc"
+356      PRINT "     FLOPPY: 5.25 inch or 3.5 inch Floppy Disc"
+357      PRINT 
+358      PRINT "When copying to a Fixed Disc drive, the storage"
+359      PRINT "space requirements for the Test Software is"
+360      IF Software$="OP VER" THEN 
+361         PRINT ">= 700 kBytes.";
+362      ELSE
+363         PRINT ">= 1.2 MBytes.";
+364      END IF
+365      PRINT " In either case, the copy which is"
+366      PRINT "performed is a file by file copy to avoid"
+367      PRINT "accidental erasure of files."
+368      PRINT 
+369      PRINT "**************************************************"
+370      BEEP 
+371      ON KEY 5 LABEL "FIXED" GOTO Fixed
+372      ON KEY 9 LABEL "FLOPPY" GOTO Floppy
+373      LOOP
+374      END LOOP
+375 Floppy:   !
+376      OFF KEY 
+377      Clr_scr
+378      PRINT "**************************************************"
+379      PRINT 
+380      PRINT "To copy the software to another floppy, you will"
+381      PRINT "need ";
+382      SELECT Software$
+383      CASE "PERFORMANCE"
+384         SELECT Mass_stg_sys$
+385         CASE "DOUBLE SIDED"
+386            PRINT "2 initialized double sided 3.5 inch microfloppies."
+387            PRINT "Also, the disc drive you are using for disc"
+388            PRINT "initialization and copying must be a double sided"
+389            PRINT "disc drive (e.g., an HP 9133H or HP 9122D)."
+390            PRINT 
+391            PRINT "Insert your blank microfloppies into your copy"
+392            PRINT "drive and INITIALIZE the discs. Press the"
+393            PRINT "keyboard's CONTINUE key when you are ready."
+394            PRINT 
+395            PRINT "**************************************************"
+396         CASE "SINGLE SIDED"
+397            PRINT "5 initialized floppies (3.5 or 5.25 inch)."
+398            PRINT "INITIALIZE your blank floppies and then press the"
+399            PRINT "keyboard's CONTINUE key when you are ready."
+400            PRINT 
+401            PRINT "**************************************************"
+402         END SELECT
+403      CASE "OP VER"
+404         SELECT Mass_stg_sys$
+405         CASE "DOUBLE SIDED"
+406            PRINT "1 double sided 3.5 inch microfloppy which is"
+407            PRINT "initialized for 1024 Bytes/Sector. The command for"
+408            PRINT "this type of format is:"
+409            PRINT "     INITIALIZE '"&Dest_msus$&"',2,3."
+410            PRINT "Also, the disc drive you are using for disc"
+411            PRINT "initialization and copying must be a double sided"
+412            PRINT "disc drive (e.g., an HP 9133H or HP 9122D)."
+413            PRINT 
+414            PRINT "Insert your blank microfloppy into your copy drive"
+415            PRINT "and initialize the discs. Press the keyboard's"
+416            PRINT "CONTINUE key when you are ready."
+417            PRINT 
+418            PRINT "**************************************************"
+419         CASE "SINGLE SIDED"
+420            PRINT "3 initialized floppies (3.5 or 5.25 inch)."
+421            PRINT "INITIALIZE your blank floppies and then press the"
+422            PRINT "keyboard's CONTINUE key when you are ready."
+423            PRINT 
+424            PRINT "**************************************************"
+425         END SELECT
+426      END SELECT
+427      PAUSE
+428      Clr_scr
+429      GOTO Copy_discs
+430 Fixed:      !
+431      OFF KEY 
+432      Fixed=1
+433 Copy_discs:      !
+434      I=1
+435 Error_return:      !
+436      LOOP
+437         ON ERROR GOTO Check_error
+438         IF File_name$(I)[1,4]="DISC" THEN 
+439            Get_disc(File_name$(I),"MASTER",1)
+440            IF File_name$(I)="DISC 1" AND Fixed=1 THEN 
+441 Create_label:  !
+442               CREATE ASCII Dest_dir$&"LABEL"&Dest_msus$,1
+443               ASSIGN @Lbl TO Dest_dir$&"LABEL"&Dest_msus$
+444               OUTPUT @Lbl;File_name$(I),Software$,"FIXED       "
+445               ASSIGN @Lbl TO *
+446            END IF
+447            GOTO Next_file
+448         END IF
+449         IF File_name$(I)="LABEL" AND Fixed=1 OR File_name$(I)="DONE" THEN GOTO Next_file
+450 Copy_the_file:      !
+451         DISP "Copying ";File_name$(I)
+452         COPY Msus_dir$&File_name$(I)&Msus$ TO Dest_dir$&File_name$(I)&Dest_msus$
+453 Next_file: !
+454         I=I+1
+455      EXIT IF File_name$(I)="END"
+456      END LOOP
+457      OFF ERROR 
+458      SUBEXIT
+459 Check_error:   !
+460      IF ERRN=54 THEN 
+461         OFF ERROR 
+462         Clr_scr
+463         PRINT "****************************************"
+464         PRINT 
+465         IF File_name$(I)[1,4]="DISC" THEN 
+466            PRINT "The file LABEL already exists"
+467         ELSE
+468            PRINT "The file ";File_name$(I);" already exists"
+469         END IF
+470         PRINT "on your disc.  Do you wish to purge the"
+471         PRINT "old file?"
+472         PRINT 
+473         PRINT "Select the appropriate softkey."
+474         PRINT 
+475         PRINT "****************************************"
+476   !
+477         IF NOT FNYes("") THEN GOTO Message
+478   !
+479 Purge_file:   !
+480         Clr_scr
+481         IF File_name$(I)[1,4]="DISC" THEN 
+482            PURGE Dest_dir$&"LABEL"&Dest_msus$
+483            GOTO Create_label
+484         ELSE
+485            PURGE Dest_dir$&File_name$(I)&Dest_msus$
+486            GOTO Copy_the_file
+487         END IF
+488 Message:   !
+489         Clr_scr
+490         PRINT "**************************************************"
+491         PRINT 
+492         PRINT "Since you do not wish to purge the existing file,"
+493         PRINT "either copy the old file onto another disc or"
+494         PRINT "RENAME the old file (only if you have sufficient"
+495         PRINT "disc space)."
+496         PRINT 
+497         PRINT "**************************************************"
+498         DISP "Press the keyboard's CONTINUE key when ready."
+499         PAUSE
+500      ELSE
+501         Clr_scr
+502         PRINT "**************************************************"
+503         PRINT 
+504         PRINT "The program encountered an error:"
+505         PRINT 
+506         PRINT ERRM$
+507         PRINT 
+508         PRINT "**************************************************"
+509         DISP "Correct the error and then press CONTINUE."
+510         PAUSE
+511      END IF
+512      Clr_scr
+513      GOTO Error_return
+514 Check_error_end:   !
+515 !
+516   SUBEND
+517   !
+518 Get_disc:SUB Get_disc(Disc_number$,Disc_type$,Insert_copy,OPTIONAL Software$,Mass_stg_sys$)
+519 !---------------------------------------------------------------
+520      COM /Storage/ Msus_dir$,Msus$,Dest_dir$,Dest_msus$
+521      DIM Disc_num$[9]
+522 !---------------------------------------------------------------
+523 Insert_disc:   !
+524      Clr_scr
+525      PRINT "**************************************************"
+526      PRINT 
+527      IF Disc_type$="MASTER" THEN 
+528         PRINT "Ensure that the Test Software's MASTER disc,"
+529         PRINT Disc_number$;", is WRITE PROTECTED!"
+530         PRINT 
+531      END IF
+532      PRINT "Insert the ";Disc_type$;" disc, ";Disc_number$&", into:"
+533      PRINT 
+534      PRINT "      '"&Msus_dir$&Msus$&"'."
+535      PRINT 
+536      IF Insert_copy=1 THEN 
+537         PRINT "Insert the COPY disc into:"
+538         PRINT 
+539         PRINT "      '"&Dest_dir$&Dest_msus$&"'."
+540         PRINT 
+541      END IF
+542      PRINT "**************************************************"
+543      Wait_for_cont
+544      Clr_scr
+545      IF Disc_type$="COPY" THEN SUBEXIT
+546      ASSIGN @Lbl TO Msus_dir$&"LABEL"&Msus$
+547      IF NPAR=5 THEN 
+548         ENTER @Lbl;Disc_num$,Software$,Mass_stg_sys$
+549      ELSE
+550         ENTER @Lbl;Disc_num$
+551      END IF
+552      ASSIGN @Lbl TO *
+553      IF Disc_num$<>Disc_number$ THEN GOTO Insert_disc
+554   SUBEND
+555   !
+556   SUB One_drive_copy(File_name$(*),Software$,Mass_stg_sys$)
+557 One_drive_copy:   !
+558   ! ************************************************************** !
+559      COM /Storage/ Msus_dir$,Msus$,Dest_dir$,Dest_msus$
+560      DIM Current_disc$[9]
+561      INTEGER I,J,X
+562   ! ************************************************************** !
+563      OFF KEY 
+564      Clr_scr
+565      PRINT "**************************************************"
+566      PRINT 
+567      PRINT "To copy the software to another floppy, you will"
+568      PRINT "need ";
+569      SELECT Software$
+570      CASE "PERFORMANCE"
+571         SELECT Mass_stg_sys$
+572         CASE "DOUBLE SIDED"
+573            PRINT "2 double sided 3.5 inch microfloppies."
+574            PRINT "Also, the disc drive you are using for disc"
+575            PRINT "initialization and copying must be a double sided"
+576            PRINT "disc drive (e.g., and HP 9133H or HP 9122D)."
+577            PRINT 
+578            PRINT "Insert your blank microfloppies into your copy"
+579            PRINT "drive and initialize the discs. Press the"
+580            PRINT "keyboard's CONTINUE key when you are ready."
+581         CASE "SINGLE SIDED"
+582            PRINT "5 initialized floppies (3.5 or 5.25 inch)."
+583            PRINT "INITIALIZE your blank floppies and then press the"
+584            PRINT "keyboard's CONTINUE key when you are ready."
+585         END SELECT
+586      CASE "OP VER"
+587         SELECT Mass_stg_sys$
+588         CASE "DOUBLE SIDED"
+589            PRINT "1 double sided 3.5 inch microfloppy which is"
+590            PRINT "initialized for 1024 Bytes/Sector. The command for"
+591            PRINT "this type of format is:"
+592            PRINT "     INITIALIZE '"&Dest_msus$&"',2,3."
+593            PRINT "Also, the disc drive you are using for disc"
+594            PRINT "initialization and copying must be a double sided"
+595            PRINT "disc drive (e.g., an HP 9133H or HP 9122D)."
+596            PRINT 
+597            PRINT "Insert your blank microfloppy into your copy drive"
+598            PRINT "and initialize the discs. Press the keyboard's"
+599            PRINT "CONTINUE key when you are ready."
+600         CASE "SINGLE SIDED"
+601            PRINT "3 initialized floppies (3.5 or 5.25 inch)."
+602            PRINT "INITIALIZE your blank floppies and then press the"
+603            PRINT "keyboard's CONTINUE key when you are ready."
+604         END SELECT
+605      END SELECT
+606      PRINT 
+607      PRINT "NOTE:The COPY discs must be INITIALIZED and BLANK!"
+608      PRINT 
+609      PRINT "**************************************************"
+610      PAUSE
+611      Clr_scr
+612      INITIALIZE ":MEMORY,0,1"
+613      I=1
+614      J=1
+615      X=1
+616 Copy_discs:      !
+617      LOOP
+618         ON ERROR GOTO Check_error
+619         IF File_name$(I)[1,4]="DISC" THEN 
+620            Get_disc(File_name$(I),"MASTER",0)
+621            Current_disc$=File_name$(I)
+622            GOTO Next_file
+623         END IF
+624         IF File_name$(I)="DONE" THEN GOTO Next_file
+625 Copy_to_memory:   !
+626         DISP "Copying ";File_name$(I);" to memory."
+627         COPY Msus_dir$&File_name$(I)&Msus$ TO File_name$(I)&":MEMORY,0,1"
+628 Next_file: !
+629         I=I+1
+630      EXIT IF File_name$(I)="END" OR File_name$(I)[1,4]="DISC"
+631      END LOOP
+632      OFF ERROR 
+633      !
+634 Memory_to_copy: !
+635      Get_disc(Current_disc$,"COPY",0)
+636      FOR J=X TO I-1
+637         IF File_name$(J)[1,4]="DISC" OR File_name$(J)="DONE" THEN GOTO Next_j
+638         DISP "Copying ";File_name$(J);" from memory."
+639         COPY File_name$(J)&":MEMORY,0,1" TO Msus_dir$&File_name$(J)&Msus$
+640 Next_j:NEXT J
+641      IF File_name$(I)="END" THEN SUBEXIT
+642      INITIALIZE ":MEMORY,0,1"
+643      IF Mass_stg_sys$="DOUBLE SIDED" THEN 
+644         Get_disc(Current_disc$,"MASTER",0)
+645      END IF
+646      X=I
+647      GOTO Copy_discs
+648         !
+649 Check_error:   !
+650      OFF ERROR 
+651      IF ERRN=64 THEN 
+652         GOTO Memory_to_copy
+653      ELSE
+654         Clr_scr
+655         PRINT "**************************************************"
+656         PRINT 
+657         PRINT ERRM$
+658         PRINT 
+659         PRINT "**************************************************"
+660         DISP "Correct the problem and then press CONTINUE."
+661         PAUSE
+662         GOTO Copy_discs
+663      END IF
+664   SUBEND
+665   !
