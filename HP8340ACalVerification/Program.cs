@@ -139,12 +139,18 @@ namespace HP8340ACalVerification
                     .ValidationErrorMessage("[red]Address must be between 0 and 30[/]")
                     .Validate(address =>
                     {
-                        return address switch
+                        if (address < 0)
                         {
-                            < 0 => ValidationResult.Error("[red]Address must be 0 or greater[/]"),
-                            > 30 => ValidationResult.Error("[red]Address must be 30 or less[/]"),
-                            _ => ValidationResult.Success()
-                        };
+                            return ValidationResult.Error("[red]Address must be 0 or greater[/]");
+                        }
+                        else if (address > 30)
+                        {
+                            return ValidationResult.Error("[red]Address must be 30 or less[/]");
+                        }
+                        else
+                        {
+                            return ValidationResult.Success();
+                        }
                     }));
 
             AnsiConsole.MarkupLine($"[green]GPIB address set to {gpibAddress}[/]");
