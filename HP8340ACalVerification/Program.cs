@@ -22,8 +22,8 @@ namespace HP8340ACalVerification
         static void Main(string[] args)
         {
             int gpibAddress = 19; // Default GPIB address for HP 8340A/B
-            NationalInstruments.Visa.ResourceManager? resManager = null;
-            GpibSession? gpibSession = null;
+            NationalInstruments.Visa.ResourceManager resManager = null;
+            GpibSession gpibSession = null;
 
             DisplayTitle(gpibAddress);
 
@@ -41,6 +41,7 @@ namespace HP8340ACalVerification
                 {
                     case "Set GPIB Address":
                         SetGPIBAddress(ref gpibAddress);
+                        DisplayTitle(gpibAddress);
                         break;
 
                     case "Connect to HP 8340A/B":
@@ -148,45 +149,67 @@ namespace HP8340ACalVerification
             Thread.Sleep(1000);
         }
 
-        static bool ConnectToDevice(int gpibAddress, ref NationalInstruments.Visa.ResourceManager? resManager, ref GpibSession? gpibSession)
+        static bool ConnectToDevice(int gpibAddress, ref NationalInstruments.Visa.ResourceManager resManager, ref GpibSession gpibSession)
         {
             // Create local variables for use in lambda
-            NationalInstruments.Visa.ResourceManager? localResManager = resManager;
-            GpibSession? localSession = null;
+            NationalInstruments.Visa.ResourceManager localResManager = resManager;
+            GpibSession localSession = null;
+            bool createdLocalResManager = false;
 
             try
             {
-                AnsiConsole.Status()
-                    .Start($"Connecting to HP 8340A/B at GPIB::{gpibAddress}...", ctx =>
+                try
+                {
+                    AnsiConsole.Status()
+                        .Start($"Connecting to HP 8340A/B at GPIB::{gpibAddress}...", ctx =>
+                        {
+                            ctx.Spinner(Spinner.Known.Dots);
+                            ctx.SpinnerStyle(Style.Parse("green"));
+
+                            // Initialize VISA resource manager
+                            if (localResManager == null)
+                            {
+                                localResManager = new NationalInstruments.Visa.ResourceManager();
+                                createdLocalResManager = true;
+                            }
+
+                            // Find resources
+                            var resources = localResManager.Find("GPIB?*INSTR");
+                            
+                            if (resources == null || resources.Count() == 0)
+                            {
+                                throw new Exception("No GPIB instruments found. Make sure NI-VISA is installed and instruments are connected.");
+                            }
+
+                            // Connect to the specific GPIB address
+                            string resourceName = $"GPIB0::{gpibAddress}::INSTR";
+                            
+                            ctx.Status($"Opening session to {resourceName}...");
+                            localSession = (GpibSession)localResManager.Open(resourceName);
+                            
+                            // Configure timeout
+                            localSession.TimeoutMilliseconds = 3000;
+
+                            Thread.Sleep(500); // Brief pause for effect
+                        });
+                }
+                catch
+                {
+                    // Ensure that any newly created resources are cleaned up on failure
+                    if (createdLocalResManager && localResManager != null)
                     {
-                        ctx.Spinner(Spinner.Known.Dots);
-                        ctx.SpinnerStyle(Style.Parse("green"));
+                        localResManager.Dispose();
+                        localResManager = null;
+                    }
 
-                        // Initialize VISA resource manager
-                        if (localResManager == null)
-                        {
-                            localResManager = new NationalInstruments.Visa.ResourceManager();
-                        }
+                    if (localSession != null)
+                    {
+                        localSession.Dispose();
+                        localSession = null;
+                    }
 
-                        // Find resources
-                        var resources = localResManager.Find("GPIB?*INSTR");
-                        
-                        if (resources == null || resources.Count() == 0)
-                        {
-                            throw new Exception("No GPIB instruments found. Make sure NI-VISA is installed and instruments are connected.");
-                        }
-
-                        // Connect to the specific GPIB address
-                        string resourceName = $"GPIB0::{gpibAddress}::INSTR";
-                        
-                        ctx.Status($"Opening session to {resourceName}...");
-                        localSession = (GpibSession)localResManager.Open(resourceName);
-                        
-                        // Configure timeout
-                        localSession.TimeoutMilliseconds = 3000;
-
-                        Thread.Sleep(500); // Brief pause for effect
-                    });
+                    throw;
+                }
 
                 // Update ref parameters after lambda
                 resManager = localResManager;

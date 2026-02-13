@@ -18,12 +18,26 @@ namespace HP8340ACalVerification
         {
             if (double.IsNaN(value) || double.IsInfinity(value))
             {
-                return $"{value} {unit}";
+                if (string.IsNullOrEmpty(unit))
+                {
+                    return value.ToString();
+                }
+                else
+                {
+                    return $"{value} {unit}";
+                }
             }
 
-            if (value == 0)
+            if (Math.Abs(value) < double.Epsilon)
             {
-                return $"0 {unit}";
+                if (string.IsNullOrEmpty(unit))
+                {
+                    return "0";
+                }
+                else
+                {
+                    return $"0 {unit}";
+                }
             }
 
             double absValue = Math.Abs(value);
@@ -53,14 +67,9 @@ namespace HP8340ACalVerification
             string valueStr = string.Format(formatString, absValue);
             
             // Only add space before unit if unit is not empty
-            if (string.IsNullOrEmpty(unit))
-            {
-                return $"{sign}{valueStr}{prefixes[index]}";
-            }
-            else
-            {
-                return $"{sign}{valueStr} {prefixes[index]}{unit}";
-            }
+            return string.IsNullOrEmpty(unit)
+                ? $"{sign}{valueStr}{prefixes[index]}"
+                : $"{sign}{valueStr} {prefixes[index]}{unit}";
         }
 
         /// <summary>
