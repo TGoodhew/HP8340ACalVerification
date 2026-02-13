@@ -70,6 +70,8 @@ namespace HP8340ACalVerification
                         {
                             AnsiConsole.MarkupLine("[yellow]Attenuator calibration procedure not yet implemented.[/]");
                             AnsiConsole.MarkupLine("[yellow]This will be based on HP-BASIC procedures from the service manual.[/]");
+                            AnsiConsole.MarkupLine("[dim]Note: When implemented, BDAT file access will be tracked automatically.[/]");
+                            AnsiConsole.MarkupLine("[dim]Example: Calibration constants stored in Cal_co<serial>.BDAT files[/]");
                             Thread.Sleep(2000);
                         }
                         break;

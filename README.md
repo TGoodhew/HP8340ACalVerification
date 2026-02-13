@@ -89,6 +89,28 @@ The following HP-BASIC program files have been provided for reference:
 
 These files are being analyzed to recreate the functionality in C# using modern .NET and NI-VISA libraries.
 
+## BDAT File Handling
+
+The HP-BASIC programs use BDAT (Binary Data) files for storing calibration data, test results, and configuration. The application includes a `BdatFileManager` class that:
+
+- **Tracks BDAT file access** - Logs when code attempts to read or write BDAT files
+- **Creates reminders** - Displays warnings when unimplemented BDAT files are accessed
+- **Generates GitHub issue templates** - Provides formatted text for creating issues to track BDAT implementation
+
+When a BDAT file is accessed, the application will display:
+```
+================================================================================
+WARNING: BDAT file access detected - Cal_co0001
+Purpose: Calibration Constants
+Access Type: READ
+
+A GitHub issue should be created to implement this BDAT file handler.
+See docs/BDAT_FILES.md for more information.
+================================================================================
+```
+
+For detailed information about BDAT files and implementation strategy, see `docs/BDAT_FILES.md`.
+
 ## Service Manual and HP-BASIC Files
 
 **Note**: This application is being developed to replicate the functionality of the original HP-BASIC calibration and verification procedures. To complete the implementation, the following files are needed:

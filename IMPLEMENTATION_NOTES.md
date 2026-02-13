@@ -154,6 +154,44 @@ string result = gpibSession.FormattedIO.ReadLine();
 2. **Runtime**: Requires .NET Framework 4.7.2 runtime (Windows only)
 3. **VISA**: Requires NI-VISA runtime installed and GPIB hardware
 4. **Service Manual**: PDF manual (9018-05913.pdf) needs to be analyzed for detailed specifications
+5. **BDAT Files**: HP-BASIC binary data files need implementation (see docs/BDAT_FILES.md)
+
+### BDAT File Management
+
+The HP-BASIC programs use BDAT (Binary Data) files extensively for data storage. The application includes a `BdatFileManager` class that automatically:
+
+1. **Detects BDAT file access** - Logs when code tries to read/write BDAT files
+2. **Creates warnings** - Displays console warnings with file details
+3. **Tracks access** - Maintains a log of all BDAT files accessed
+4. **Generates issue templates** - Provides ready-to-use GitHub issue text
+
+**Usage Example:**
+```csharp
+// When accessing a BDAT file in your code
+BdatFileManager.RegisterBdatAccess(
+    "Cal_co0001",                    // File name
+    "Calibration Constants",         // Purpose
+    "READ"                           // Access type
+);
+
+// Check if file handler is implemented
+if (!BdatFileManager.IsBdatImplemented("Cal_co0001"))
+{
+    // Display warning and create issue reminder
+    Console.WriteLine(BdatFileManager.GetGitHubIssueMessage(
+        "Cal_co0001",
+        "Calibration Constants"
+    ));
+}
+```
+
+**BDAT Files Identified:**
+- `Cal_co<serial>` - Calibration constants (JANITOR.txt:5073)
+- `SERIAL<serial>` - Serial number data (JANITOR.txt:5409)
+- Status files - Test execution tracking (JANITOR.txt:4063)
+- Manager files - System configuration (FS_MANAGER.txt:2376, 2714)
+
+See `docs/BDAT_FILES.md` for comprehensive documentation.
 
 ### Security
 
