@@ -21,7 +21,7 @@ The HP 8340A and 8340B are synthesized signal generators manufactured by Hewlett
 - **GPIB interface hardware** (National Instruments GPIB-USB-HS, etc.)
 - **HP 8340A or HP 8340B Signal Generator**
 
-> **Note**: This is a .NET Framework 4.7.2 Windows application. It requires Visual Studio or MSBuild on Windows to build. The project uses packages.config for NuGet package management, following the traditional .NET Framework project structure.
+> **Note**: This is a .NET Framework 4.7.2 Windows application using **C# 7.3 syntax**. It requires Visual Studio or MSBuild on Windows to build. The project uses packages.config for NuGet package management, following the traditional .NET Framework project structure.
 
 ## Installation
 
@@ -61,10 +61,11 @@ The HP 8340A and 8340B are synthesized signal generators manufactured by Hewlett
 
 This project is under active development. Current status:
 
-- [x] Basic application structure (.NET Framework 4.7.2)
+- [x] Basic application structure (.NET Framework 4.7.2, C# 7.3)
 - [x] GPIB connection functionality
 - [x] Spectre.Console UI
 - [x] Code review feedback addressed
+- [x] C# 7.3 syntax compliance verified
 - [x] Service manual received (9018-05913.pdf)
 - [x] HP-BASIC reference files received
 - [ ] Attenuator calibration procedures (implementation in progress)

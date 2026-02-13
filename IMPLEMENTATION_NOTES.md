@@ -1,8 +1,8 @@
 # Implementation Notes
 
-## Conversion to .NET Framework 4.7.2
+## Conversion to .NET Framework 4.7.2 with C# 7.3
 
-This project has been converted from .NET 8.0 to .NET Framework 4.7.2 as requested to align with the user's existing HP equipment test software architecture.
+This project has been converted from .NET 8.0 to .NET Framework 4.7.2 as requested to align with the user's existing HP equipment test software architecture. The codebase strictly uses **C# 7.3 syntax** for maximum compatibility.
 
 ### Project Structure
 
@@ -33,6 +33,7 @@ HP8340ACalVerification/
 - Visual Studio 2017 or later (recommended)
 - .NET Framework 4.7.2 Developer Pack
 - NI-VISA runtime installed
+- **C# 7.3 compiler** (included with VS 2017+)
 
 **Build Steps:**
 1. Open `HP8340ACalVerification.sln` in Visual Studio
@@ -51,6 +52,14 @@ msbuild HP8340ACalVerification.sln /t:Build /p:Configuration=Release
 # Run the application
 HP8340ACalVerification\bin\Release\HP8340ACalVerification.exe
 ```
+
+### C# Language Version
+
+**Current**: C# 7.3 (default for .NET Framework 4.7.2)
+
+The project strictly uses C# 7.3 syntax. No `<LangVersion>` property is specified in the project file, ensuring compatibility with the default compiler for .NET Framework 4.7.2.
+
+For detailed information about C# version requirements and feature usage, see `docs/CSHARP_VERSION.md`.
 
 ### Dependencies
 
