@@ -1,0 +1,436 @@
+9000  DEF FNTest_file$
+9001  !---------------------------------------------------------------!
+9002  !  RE-STORE "/MANAGER/TEST/Cal_co:REMOTE; LABEL WHOPPER"
+9003  !---------------------------------------------------------------!
+9004     RETURN "Cal_co"
+9005  FNEND
+9006  !
+9007  !**************************************************
+9008  !*                                                *
+9009  !*  Copyright (C) Hewlett-Packard Co. 1982,1987   *
+9010  !*                                                *
+9011  !**************************************************
+9012  !
+9013  ! ************************************************************* !
+9014  !
+9015  SUB Cal_co(Model$,Ser$,Opt$,Jan_mode$,Test_mode$,INTEGER Results,Depend)
+9016 Cal_co:!
+9017  !---------------------------------------------------------------!
+9018  !          8340A  CALIBRATION  CONSTANTS  UTILITIES
+9019  !---------------------------------------------------------------!
+9020  !                     Part of 08340-90088
+9021  !
+9022  !---------------------------------------------------------------!
+9023  !  Revision Log :
+9024  !
+9025  ! o 09/11/84 Changed call to load cal image to make program work with
+9026  !            data analysis.   MS
+9027  ! o 03/20/86 Modified to print directions on hard copy print out for field
+9028  !            service.  DG  3/20/86
+9029  ! o 04/07/86 Turned EXIT key on at page 1 of cal_co_display. DG
+9030  ! o 05/14/86 Reduce softkeys to 7 letters for Series 300 compatibility. DG
+9031  ! o 10/20/86 Added call to Instr_present at beginning of test (Field
+9032  ! o          Service only).  DG.
+9033  ! o 11/04/86 Added IP after EI printout so DUT is ready to ship. kh
+9034  !
+9035  !---------------------------------------------------------------!
+9036     Revision$="A"!           10/20/86            DG
+9037  !---------------------------------------------------------------!
+9038     COM /Hpib_codes/ @Dut,@D2,@D3,@D4,@D5,@D6,@D7,@D8,@D9,@D10
+9039     COM /Hpib_codes/ @D11,@D12,@D13,@D14,@D15,@D16
+9040  !---------------------------------------------------------------!
+9041     INTEGER Constants(1:99)
+9042     INTEGER Limits_ok,Comp_ok,I,File_loaded
+9043  !---------------------------------------------------------------!
+9044     DIM Data_source$[5],Pass_fail$[50]
+9045     DIM Rev$[24],F_rev$[24],F_opt$[2]
+9046     DIM Date$[20]
+9047  !---------------------------------------------------------------!
+9048     DIM Cal_co_keys$(0:9)[14],Key_choice$[14],Default_action$[14]
+9049  !---------------------------------------------------------------!
+9050     OFF TIMEOUT 
+9051 Starting_keys: !
+9052     DATA "ReadDUT","GetFILE" ,        "",        "",        ""
+9053     DATA "COMPARE" ,         "",        "",        "","EXIT"
+9054 Data_in_memory: !
+9055     DATA "ReadDUT","GetFILE" ,"PRINT"   ,"Wrt DUT" ,"SavFILE"
+9056     DATA "COMPARE" ,         "","DISPLAY" ,        "","EXIT"
+9057     !
+9058     RESTORE Starting_keys
+9059     READ Cal_co_keys$(*)
+9060  !---------------------------------------------------------------!
+9061     IF Test_mode$="FSP" THEN CALL Instr_present(@Dut,"Device Under Test")
+9062     OUTPUT @Dut;"IP CW S2"
+9063     Rev$=FNMemory_rev$(@Dut)
+9064     !
+9065     IF Test_mode$="EI_" THEN 
+9066        Load_cal_image(Model$,Ser$,F_rev$,F_opt$,Constants(*),File_loaded)
+9067        IF File_loaded THEN 
+9068           Data_source$="IMAGE"
+9069           Cal_co_compare(@Dut,Constants(*),Comp_ok)
+9070           Chk_cal_limits(Rev$,Constants(*),Limits_ok)
+9071           IF Comp_ok THEN 
+9072              Pass_count(Results)
+9073           ELSE
+9074              Fail_count(Results)
+9075           END IF
+9076           Cal_co_out(Model$,Ser$,Test_mode$,"PRINT",Rev$,Constants(*),Date$)
+9077        ELSE
+9078           DISP "NO IMAGE FILE FOUND"
+9079           FOR I=1 TO 20
+9080              BEEP 100,.1
+9081              BEEP 200,.2
+9082           NEXT I
+9083        END IF
+9084        OUTPUT @Dut;"IP"
+9085        SUBEXIT
+9086     END IF
+9087     !
+9088     Default_action$="COMPARE"
+9089     REPEAT
+9090        Clr_scr
+9091        PRINT "**************************************************"
+9092        PRINT "            CALIBRATION CONSTANTS "
+9093        PRINT "**************************************************"
+9094        PRINT 
+9095        PRINT "   k5   Compare Cal.Consts.  (DUT to IMAGE)       "
+9096        PRINT "   k9   EXIT Calibration Constants.               "
+9097        PRINT 
+9098        PRINT "---------------    UTILITIES    ------------------"
+9099        PRINT "   k0   Read all calibration constants from DUT.  "
+9100        PRINT "   k1   Load Cal.Const. 'IMAGE' file.             "
+9101        IF Data_source$="DUT" OR Data_source$="IMAGE" THEN 
+9102           PRINT "   k2   Print out the calibration constants.      "
+9103           PRINT "   k3   Write all calibration to DUT              "
+9104           PRINT "   k4   Save Cal.Consts. data file.               "
+9105           PRINT "   k7   Display calibration constants.            "
+9106           PRINT 
+9107           PRINT Data_source$&" Cal.Consts. in Memory."
+9108        ELSE
+9109           PRINT USING "5/"
+9110        END IF
+9111        !
+9112        PRINT Pass_fail$
+9113        !
+9114        IF Jan_mode$="MENU" THEN 
+9115           Get_key_choice(Key_choice$,Cal_co_keys$(*),"KEY")
+9116        ELSE
+9117           Get_key_choice(Key_choice$,Cal_co_keys$(*),"KEY",20)
+9118           IF Key_choice$="TIMEOUT" THEN Key_choice$=Default_action$
+9119        END IF
+9120        !
+9121        SELECT Key_choice$
+9122        CASE "COMPARE"
+9123           IF Data_source$<>"IMAGE" THEN 
+9124              Load_cal_image(Model$,Ser$,F_rev$,F_opt$,Constants(*),File_loaded)
+9125              IF File_loaded THEN 
+9126                 Data_source$="IMAGE"
+9127                 RESTORE Data_in_memory
+9128                 READ Cal_co_keys$(*)
+9129              ELSE
+9130                 DISP "NO IMAGE FILE FOUND"
+9131                 BEEP 
+9132                 WAIT 2
+9133                 Default_action$="EXIT"
+9134              END IF
+9135           END IF
+9136           !
+9137           IF Data_source$="IMAGE" THEN 
+9138              Cal_co_compare(@Dut,Constants(*),Comp_ok)
+9139              Chk_cal_limits(Rev$,Constants(*),Limits_ok)
+9140              IF Comp_ok THEN 
+9141                 Pass_count(Results)
+9142                 Pass_fail$="Passed ALL Calibration Consts"
+9143              ELSE
+9144                 Fail_count(Results)
+9145                 Pass_fail$=""
+9146                 IF NOT Comp_ok THEN Pass_fail$="FAILED Compare !!  "
+9147                 IF NOT Limits_ok THEN Pass_fail$=Pass_fail$&"FAILED Limits !!"
+9148              END IF
+9149              Default_action$="PRINT"
+9150           END IF
+9151        CASE "ReadDUT"
+9152           Read_dut_cal(Constants(*))
+9153           Data_source$="DUT"
+9154           RESTORE Data_in_memory
+9155           READ Cal_co_keys$(*)
+9156        CASE "GetFILE"
+9157           Load_cal_image(Model$,Ser$,F_rev$,F_opt$,Constants(*),File_loaded)
+9158           IF File_loaded THEN 
+9159              Data_source$="IMAGE"
+9160              RESTORE Data_in_memory
+9161              READ Cal_co_keys$(*)
+9162           ELSE
+9163              DISP "NO IMAGE FILE FOUND"
+9164              BEEP 
+9165              WAIT 2
+9166           END IF
+9167        CASE "PRINT"
+9168           Cal_co_out(Model$,Ser$,Test_mode$,"PRINT",Rev$,Constants(*),Date$)
+9169           Default_action$="EXIT"
+9170        CASE "DISPLAY"
+9171           Cal_co_out(Model$,Ser$,Test_mode$,"DISPLAY",Rev$,Constants(*),Date$)
+9172           Default_action$="EXIT"
+9173        CASE "SavFILE"
+9174           Save_cal_image(Rev$,Opt$,Constants(*))
+9175        CASE "Wrt DUT"
+9176           FOR I=1 TO FNCal_location("CHECKSUM")-1
+9177              Write_cal(@Dut,I,Constants(I))
+9178           NEXT I
+9179           Protect_cal(@Dut)
+9180        END SELECT
+9181     UNTIL Key_choice$="EXIT"
+9182     !
+9183  SUBEND
+9184  !
+9185  ! ************************************************************* !
+9186  !
+9187  SUB Cal_co_compare(@Dut,INTEGER Constants(*),All_ok)
+9188 Cal_co_compare: !
+9189  !---------------------------------------------------------------!
+9190  !                8340A  CALIBRATION  COMPARISON
+9191  !---------------------------------------------------------------!
+9192  !                     Part of 08340-90088
+9193  !
+9194  !  Revision;  A             04/11/84              Claude F. Ashen
+9195  !---------------------------------------------------------------!
+9196  !  This subprogram will compare the calibration constants in the
+9197  !  input array 'Constants(*)' to the calibration constants in the
+9198  !  device specifed by the I/O path name '@Dut'. The output
+9199  !  parameter 'All_ok' is used to return the results of the
+9200  !  comparison.
+9201  !---------------------------------------------------------------!
+9202     COM /Peripherals/ INTEGER Print,Kbd,Crt
+9203  !---------------------------------------------------------------!
+9204     INTEGER I,Cal_value
+9205  !---------------------------------------------------------------!
+9206     All_ok=1
+9207     FOR I=1 TO FNCal_location("CHECKSUM")
+9208        Cal_name$=FNCal_name$(I)
+9209        DISP "CHECKING CAL CONST  ";Cal_name$
+9210        Cal_value=FNRead_cal(@Dut,I)
+9211        !
+9212        IF Cal_value<>Constants(I) THEN 
+9213           All_ok=0
+9214           BEEP 
+9215           IF FNCal_name$(I)<>"unused" THEN 
+9216              OUTPUT Print USING "K,X,DD,X,K,K";"CAL #",I,"*** ERROR ***  ",Cal_name$
+9217              OUTPUT Print USING "4X,K,X,SZZZZZ,X,K,X,SZZZZZ";"CAL=",Cal_value,"IMAGE=",Constants(I)
+9218              OUTPUT Print;""
+9219           END IF
+9220        END IF
+9221        !
+9222     NEXT I
+9223     !
+9224     DISP 
+9225     !
+9226  SUBEND
+9227  !
+9228  ! ************************************************************* !
+9229  !
+9230  SUB Cal_co_out(Model$,Ser$,Test_mode$,Data_dest$,Rev$,OPTIONAL INTEGER Cnstnts(*),Dt$)
+9231 Cal_co_out:  !
+9232  !---------------------------------------------------------------!
+9233  !            8340A  CALIBRATION  CONSTANT OUTPUT
+9234  !---------------------------------------------------------------!
+9235  !                     Part of 08340-90088
+9236  !
+9237  !  Revision;  A             04/11/84              Claude F. Ashen
+9238  !---------------------------------------------------------------!
+9239     COM /Peripherals/ INTEGER Print,Kbd,Crt
+9240  !---------------------------------------------------------------!
+9241     DIM Data_rev$[24],Opt$[2]
+9242  !---------------------------------------------------------------!
+9243     INTEGER Constants(99),File_loaded,Good_rev,I
+9244  !---------------------------------------------------------------!
+9245     IF NPAR=5 THEN 
+9246        Load_cal_image(Model$,Ser$,Data_rev$,Opt$,Constants(*),File_loaded)
+9247        IF File_loaded THEN 
+9248           IF NOT FNCal_list_ok(Data_rev$) THEN 
+9249              Setup_cal_names(Data_rev$)
+9250           END IF
+9251        ELSE
+9252           Rev$=""
+9253           SUBEXIT
+9254        END IF
+9255     ELSE
+9256        FOR I=1 TO 99
+9257           Constants(I)=Cnstnts(I)
+9258        NEXT I
+9259        Data_rev$=Rev$
+9260     END IF
+9261     !
+9262     IF Data_dest$="PRINT" THEN 
+9263        Cal_co_printout(Model$,Ser$,Data_rev$,Constants(*))
+9264        SELECT Test_mode$
+9265        CASE "EI_","FSA","FSC","FSP","FSV"
+9266           Prt_directions(Model$)
+9267           OUTPUT Print USING "#,@"
+9268        END SELECT
+9269        PRINTER IS Crt
+9270     ELSE
+9271        Cal_co_display(Model$,Ser$,Data_rev$,Constants(*))
+9272     END IF
+9273     !
+9274  SUBEND
+9275  !
+9276  ! ************************************************************* !
+9277  !
+9278  SUB Cal_co_printout(Model$,Ser$,Data_rev$,INTEGER Constants(*))
+9279 Cal_co_printout: !
+9280  !---------------------------------------------------------------!
+9281  !      8340A CALIBRATION CONSTANT HARD COPY PRINT OUTPUT
+9282  !---------------------------------------------------------------!
+9283  !                     Part of 08340-90088
+9284  !
+9285  !  Revision;  A             04/11/84              Claude F. Ashen
+9286  !---------------------------------------------------------------!
+9287     COM /Peripherals/ INTEGER Print,Kbd,Crt
+9288  !---------------------------------------------------------------!
+9289     INTEGER I,Last_const,Dash_lenght,Num_col,J,N,Col_lenght
+9290     DIM Dash_line$[110],Ec$[1],Build$[36],Output_line$[110]
+9291  !---------------------------------------------------------------!
+9292 Build_line:IMAGE #,"|",2X,DD,".",X,18A,2X,6D,2X,"|"
+9293     Last_const=FNCal_location("CHECKSUM")
+9294     Ec$=CHR$(27)
+9295     !
+9296     IF Last_const>62 THEN 
+9297        Dash_lenght=108
+9298        Num_col=3
+9299        PRINTER IS Print;WIDTH 132 !...uses compressed mode
+9300     ELSE
+9301        Dash_lenght=72
+9302        Num_col=2
+9303        PRINTER IS Print
+9304     END IF
+9305     !
+9306     FOR I=1 TO Dash_lenght
+9307        Dash_line$[I;1]="="
+9308     NEXT I
+9309     !
+9310     Top_of_page
+9311     !
+9312     PRINT "                "&Model$&" CALIBRATION CONSTANTS"
+9313     PRINT "  SERIAL NUMBER; ";Ser$;"                   ";Data_rev$[2,LEN(Data_rev$)]
+9314     IF Num_col=3 THEN 
+9315        PRINT Ec$&"&k2S"&Dash_line$
+9316     ELSE
+9317        PRINT Dash_line$
+9318     END IF
+9319     !
+9320     Col_lenght=Last_const DIV Num_col
+9321     !
+9322     FOR I=1 TO Col_lenght
+9323        Output_line$=""
+9324        FOR J=0 TO Num_col-1
+9325           N=I+J*Col_lenght
+9326           OUTPUT Build$ USING Build_line;N,FNCal_name$(N),Constants(N)
+9327           Output_line$=Output_line$&Build$
+9328        NEXT J
+9329        PRINT Output_line$
+9330     NEXT I
+9331     !
+9332     IF Num_col=3 THEN 
+9333        PRINT Ec$&"&k2S"&Dash_line$
+9334        PRINT Ec$&"&k0S";
+9335     ELSE
+9336        PRINT Dash_line$
+9337        PRINT 
+9338     END IF
+9339     !
+9340     PRINTER IS Crt
+9341     !
+9342  SUBEND
+9343  !
+9344  ! ************************************************************* !
+9345  !
+9346  SUB Cal_co_display(Model$,Ser$,Data_rev$,INTEGER Constants(*))
+9347 Cal_co_display: !
+9348  !---------------------------------------------------------------!
+9349  !         8340A CALIBRATION CONSTANT CRT PRINT OUTPUT
+9350  !---------------------------------------------------------------!
+9351  !                     Part of 08340-90088
+9352  !
+9353  !  Revision;  A             04/11/84              Claude F. Ashen
+9354  !---------------------------------------------------------------!
+9355     COM /Peripherals/ INTEGER Print,Kbd,Crt
+9356  !---------------------------------------------------------------!
+9357     DIM Cal_disp_keys$(0:9)[14],Key_choice$[14]
+9358  !---------------------------------------------------------------!
+9359     DATA         "",       "",        "",        "",        ""
+9360     DATA "Next",       "",        "",        "",        ""
+9361     RESTORE 
+9362     READ Cal_disp_keys$(*)
+9363  !---------------------------------------------------------------!
+9364     INTEGER Page,Line,Pointer,Last_const
+9365  !---------------------------------------------------------------!
+9366     Last_const=FNCal_location("CHECKSUM")
+9367     PRINTER IS Crt
+9368     REPEAT
+9369        Page=0
+9370        LOOP
+9371           Clr_scr
+9372           PRINT "=================================================="
+9373           PRINT " CAL CONSTANTS "&Data_rev$[2,6]&" "&Data_rev$[7];" SER#";Ser$;" PG.";Page+1
+9374           PRINT "=================================================="
+9375           PRINT 
+9376           PRINT 
+9377           FOR Line=1 TO 13
+9378              Pointer=Line+13*Page
+9379              IF Pointer<=Last_const THEN 
+9380                 PRINT USING "9X,2D,A,2X,20A,X,6D";Pointer,".",FNCal_name$(Pointer),Constants(Pointer)
+9381              END IF
+9382           NEXT Line
+9383           IF Page=0 THEN Cal_disp_keys$(9)="EXIT"
+9384           Get_key_choice(Key_choice$,Cal_disp_keys$(*),"KEY")
+9385        EXIT IF Key_choice$="EXIT"
+9386           Page=Page+1
+9387           IF Page*13>Last_const THEN Page=0
+9388        END LOOP
+9389     UNTIL Key_choice$="EXIT"
+9390     !
+9391  SUBEND
+9392  !
+9393  ! ************************************************************* !
+9394  !
+9395  SUB Prt_directions(Model$)
+9396 Prt_directions: !
+9397  !---------------------------------------------------------------!
+9398  !       8340A CALIBRATION CONSTANT MANUAL INSTRUCTIONS
+9399  !---------------------------------------------------------------!
+9400  !                     Part of 08340-90088
+9401  !
+9402  !  Revision;  A             04/11/84              Claude F. Ashen
+9403  !---------------------------------------------------------------!
+9404     COM /Peripherals/ INTEGER Print,Kbd,Crt
+9405  !---------------------------------------------------------------!
+9406     PRINTER IS Print
+9407     PRINT "Procedure for manually entering calibration data into the "&Model$&"."
+9408     PRINT "1) Push the following sequence of KEYS:"
+9409     PRINT "     Instrument Preset SHIFT MHz 1 2 Hz SHIFT KHz 2 2 Hz"
+9410     PRINT "2) Note the Entry Display will indicate the Calibration "
+9411     PRINT "     Constant number and value."
+9412     PRINT "3) Enter via the KEY BOARD or DATA KNOB the correct value for"
+9413     PRINT "     the first Calibration Constant indicated in the display."
+9414     PRINT "     << Terminate KEYBOARD entries with the Hz key >>"
+9415     PRINT "4) Go to the next Calibration Constant by pushing the UP step"
+9416     PRINT "     key.  The next cal constant can then be entered. Do not enter"
+9417     PRINT "     the ""CHECKSUM"" Constant (this is computed automatically)."
+9418     PRINT "5) The Step Keys can be used to move from one Calibration Constant"
+9419     PRINT "     to another to either check them or to correct them."
+9420     PRINT "6) After all the entries have been made, check that all the numbers"
+9421     PRINT "     are correct by using the step keys to review and verify them."
+9422     PRINT "7) Allow the instrument to warm up for 1/2 hour and make sure that"
+9423     PRINT "     nothing is connected to the Stop Sweep connector on the rear panel."
+9424     PRINT "     Push SHIFT PEAK to perform an Automatic Tracking Calibration."
+9425     PRINT "     This step may modify the ""YTM GAIN n"" & ""YTM BX GAIN n"" constants."
+9426     PRINT "8) The CALIBRATION data should be permanently stored in the Non"
+9427     PRINT "     Volatile Protected Memory by pushing the following key sequence:"
+9428     PRINT "     SHIFT MHz 14 Hz SHIFT KHz 5349 Hz PRESET."
+9429     !
+9430     PRINTER IS Crt
+9431     !
+9432  SUBEND
+9433  !
+9434  ! ************************************************************* !
+9435  !

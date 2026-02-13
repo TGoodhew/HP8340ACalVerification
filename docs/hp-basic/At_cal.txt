@@ -1,0 +1,2242 @@
+9000  DEF FNTest_file$
+9001     RETURN "At_cal"
+9002  FNEND
+9003  !
+9004  !**************************************************
+9005  !*                                                *
+9006  !*  Copyright (C) Hewlett-Packard Co. 1982,1987   *
+9007  !*                                                *
+9008  !**************************************************
+9009  !
+9010  SUB At_cal(Model$,Ser_no$,Opt$,Jan_mode$,Test_mode$,INTEGER Pass_fail,Depend)
+9011 At_cal: !
+9012  ! *****************************************
+9013  !  ATTENUATOR CALIBRATION AND VERIFICATION
+9014  !
+9015  !
+9016  !
+9017  !        8.05.82
+9018  !******************************************
+9019  !  9.01.82  converted set up   jt
+9020  !  9.17.82  new data tagging and Ganglia
+9021  !           conversion
+9022  !  9.24.82  converted over to ET-16841
+9023  !  10.7.82  runs with EI now
+9024  !  10.15.82 fixed bug in loading flatness
+9025  !           data, also added ATTN DRIVER
+9026  !           to set up instructions.
+9027  !  10.19.82 finished EI hookup  ms
+9028  !  10.22.82 add 10 dB pad to Mixer IF port
+9029  !           & chg'ed to 2 dB/ on 3585A
+9030  !  10.25.82 Kurt fixed my label bug
+9031  !  10.27.82 Added .23 dB test margin
+9032  !  11.1.82  Miscellaneous changes
+9033  !  11.5.82  Corrected sign of ref atn cal
+9034  !  11.16.82 Reset cal_flag in set_up for EI
+9035  !  11.29.82 Hooked up At_cal_parms
+9036  !  12.02.82 Chg'ed IF to 1.03 MHz and
+9037  !           3585A VBW to 10 Hz,added 10 dB
+9038  !           pad to RF port ( 20 dB total )
+9039  !  12.08.82 Installed correct test margins,
+9040  !           chg'ed rev to c
+9041  !  12.15.82 Fixed pass count bug
+9042  !   1.11.83 Added range checking on slope
+9043  !           cal constant adjustment
+9044  !   1.12.83 Chg'ed Store_data to call Prep_
+9045  !           data_file only once
+9046  !   2.03.83 Chg'ed multiplier on Startf in
+9047  !           Atten_dat(*) to 1000.Update to
+9048  !           rev d.
+9049  !   2.14.83 Chg'ed multiplier in Calibrate
+9050  !           for compatibility ,oops !!
+9051  !   2.24.83 Fixed call to fail_count
+9052  !   3.03.83 Chg'ed sensitivity of lo slope
+9053  !           in adjust ( to .00675 dB/GHz)
+9054  !   3.07.83 Added 80 & 90 dB steps,chg'ed
+9055  !           Attdata(*) to Attdata(201,11)
+9056  !           Chg'ed to rev e.
+9057  !   3.10.83 Now displays set up every time
+9058  !   3.23.83 Chg'ed to 30 dB ref step for
+9059  !           80 & 90 dB
+9060  !   3.29.83 Added specs for 80-100 & added
+9061  !           capability to meas. -100 dBm
+9062  !   4.12.83 Added subroutine to print
+9063  !           message to install pad
+9064  !   4.25.83 Fixed bug with pad in/out
+9065  !   6.10.83 Clean up on 80-100 dB steps
+9066  !   6.29.83 Now using Pwr_acc subs to add
+9067  !           flatness data.
+9068  !   7.18.83 Chg'ed EI to print harcopy and
+9069  !           measure 80 & 90 dB steps.
+9070  !   8.24.83 Many changes; now uses Pwracc
+9071  !   9.06.83 Limit check for offset cals
+9072  !   9.07.83 Fixed Pass_fail indicator ms
+9073  !  10.14.83 Changed Set_et mnemonics MS
+9074  !  11.02.83 Inserted 10dB pad in Set_et
+9075  !  12.07.83 Fixed Atten_steps$ in output
+9076  !  12.14.83 Fixed FNAuto bugs  ms
+9077  !  01.12.84 Changed pad messages MS
+9078  !  02.07.84 Moved Check_spec in 80-90dB steps MS
+9079  !  02.16.84 Fixed bug in storing EI data; was writing
+9080  !           over CAL FINAL data...ms
+9081  !  02.24.84 Added File$ to Prep_data_file call ms
+9082  !  03.26.84 Added hookup changes for field MS
+9083  !  04.24.84 MANAGERized   rev A   MS
+9084  !  07.23.84 Changed to Strings for cal nums;
+9085  !           also added 80-90 dB adjust capabilities
+9086  !           and deleted band 4 when appropriate MS
+9087  !
+9088  !  04.24.85 Now uses Wait_for_cont, FNYes, etc   MS
+9089  !  04.26.85 Deleted Gosub Disp_setup in Procedure Mode. MD
+9090  !  05.06.85 Added Refatn=1 for EI  MD
+9091  !  06.04.85 Added 80-90 dB adjust capabilities. MD
+9092  !  06.05.85 Renamed data loader key so it would be used JT
+9093  !  09.27.85 Removed 130 MHz LPF from setup.
+9094  !  11.08.85 Enters limit when out of range. MD
+9095  !  11.08.85 New softkey that resets re-cal flag then measures all. MD
+9096  !   1.06.86 Modified for Field Service JT
+9097  !  03.05.86 Modified test setup for field service and added FS to SELECT
+9098  !           cases.  Modified At_cal_out to call Top_of_page after
+9099  !           plotting two graphs on printer.  DG
+9100  !  04.02.86 Fixed bug in No_flatdat.  DG
+9101  !  04.10.86 Added prompt if no attenuator data is available.  Also removed
+9102  !           Re-measure softkey from from field service version since this
+9103  !           function does not work.  DG
+9104  !  05.15.86 Modified softkeys and added call to Clr_scr during graghics
+9105  !           output for Series 300 compatibility. Added SELECT Test_mode$
+9106  !           to Jan_mode$ tests.  DG
+9107  !  08.18.86 Modified the way Atten_cal(*) is checked and loaded. MD
+9108  !  09.22.86 Fixed bug relating to Get_cal_factors in EI. MD
+9109  !  10.21.86 Added call to Instr_present for field. Deleted Get_cal_factors
+9110  !           from At_cal, Get_atten_cal (LIBRARY) is used instead.  DG
+9111  !  10/31/86 Added test_mode$ select when calling get_cal_factors.  Deleted
+9112  !           Glenn's My_node stuff.  DG
+9113  !  11/18/86 Changed field's accuracy & flatness spec to customer spec.  DG
+9114  !  01/12/87 Modified VIEWPORT/WINDOW in graphics output and setup for
+9115  !           Series 300 compatibility. DG
+9116  ! *****************************************
+9117     Rev$="A      01.12.87"!      DG
+9118  ! *****************************************
+9119  !
+9120 Finally: !
+9121  !
+9122     IF NOT (FNDut_has("ATTEN",Opt$)) THEN 
+9123        Clr_scr
+9124        OFF KEY 
+9125        PRINT "***************************************************"
+9126        PRINT "This unit does not seem to have an attenuator,"
+9127        PRINT "so running the ATTENUATOR VERIFICATION TEST"
+9128        PRINT "seems somewhat silly. If, for some reason, you"
+9129        PRINT "still want to continue, press 'GO ON'.  Otherwise"
+9130        PRINT "the 'JANITOR' key will be automatically pressed"
+9131        PRINT "in about 30 seconds."
+9132        PRINT "***************************************************"
+9133        ON KEY 5 LABEL "GO ON" GOTO Do_it
+9134        ON KEY 9 LABEL "JANITOR" GOTO Stop_it
+9135        Timestart=TIMEDATE
+9136        REPEAT
+9137        UNTIL TIMEDATE>Timestart+30
+9138 Stop_it:Pass_fail=1
+9139        SUBEXIT
+9140 Do_it: OFF KEY 
+9141     END IF
+9142  ! *****************************************
+9143  !             J A N I T O R
+9144  !      I N I T I A L I Z A T I O N
+9145  ! *****************************************
+9146     OPTION BASE 0
+9147     COM /Hpib_codes/ @Dut,@Sa,@Lfsa,@Co,@Pw,@Dm,@Fn,@Rn,@Lo,@Mn,@Atn,@D12,@D13,@D14,@D15,@D16
+9148     COM /User_data/ Am_cal(*),Atten_cal(*),Pwr_sensor(*),Flatdata(*),User(*)
+9149     COM /Peripherals/ INTEGER Print,Kbd,Crt
+9150     Depend=0!...not used in this program
+9151  !
+9152  ! **************************************
+9153  !    PROGRAM INITIALIZATION
+9154  ! **************************************
+9155  !
+9156     Data_dest$="DISPLAY"
+9157     INTEGER Attdata(201,11),Old_attdata(201,7)
+9158     DIM Fail_flag(10)
+9159     DIM Hd$[30]
+9160     DIM Offset$[20],Slope$[20],Hi_slp$[20]
+9161     INTEGER Ofst,Oldofst,Slp,Oldslp,Slp20,Old20,Lo_bnd_slp
+9162     INTEGER Test_all,First_fail_flg,Pad_out,P_f,Raw
+9163     INTEGER Error_code,Error_num,Adjust_mode
+9164     DIM Path$[30],Data_rev$[30]
+9165     File_flag=0! flag for Store_data
+9166     Calco_adjusted=0
+9167     Refatn_loaded=0
+9168     SELECT Test_mode$
+9169     CASE "FSP","FSC"
+9170        Get_atten_cal(Atten_cal(*),Test_mode$)
+9171        IF Atten_cal(8)=0 THEN 
+9172           SUBEXIT !  Return to Test Menu if Cal Data not loaded.
+9173        ELSE
+9174           Refatn_loaded=1
+9175        END IF
+9176     CASE ELSE
+9177        IF Atten_cal(8)=0 THEN 
+9178           Get_atten_cal(Atten_cal(*))
+9179           Refatn_loaded=1
+9180        ELSE
+9181           Refatn_loaded=1
+9182        END IF
+9183     END SELECT
+9184  !
+9185  ! ... get test parameters
+9186  !
+9187     CALL At_cal_parms(Rev$[1,1],Opt$,Startf,Stopf,Init_f,If_freq,Att_pts)
+9188     F_inc=(Stopf-Startf)/Att_pts
+9189     IF Jan_mode$<>"MENU" THEN 
+9190        SELECT Test_mode$
+9191        CASE "CF_"!....CAL/FINAL
+9192           GOTO Adjust
+9193        CASE "EI_"
+9194           GOTO Verify
+9195        CASE "T00" TO "T99"
+9196           GOTO Verify
+9197        CASE "FSP","FSC"
+9198           GOTO Cal_ver_menu
+9199        CASE ELSE
+9200           GOTO Verify
+9201        END SELECT
+9202     END IF
+9203  !
+9204  !----------------------------------
+9205  !    CALIBRATE/VERIFY MENU
+9206  !----------------------------------
+9207  !
+9208 Cal_ver_menu:   !
+9209     OFF TIMEOUT 
+9210     Clr_scr
+9211     PRINT " ------------------------------------------------"
+9212     PRINT "  ** ATTENUATOR CALIBRATION AND VERIFICATION **"
+9213     PRINT "              REV. ";Rev$
+9214     PRINT " ------------------------------------------------"
+9215     PRINT "   SELECT A KEY BELOW :"
+9216     PRINT 
+9217     PRINT "ADJUST:    Adjust Cal Constants, MEASURE & SPEC."
+9218     PRINT 
+9219     PRINT "MEASURE:   Measure attenuator steps then SPEC."
+9220     PRINT 
+9221     PRINT "SPEC:      Combine stored Attenuator data with"
+9222     PRINT "           Power Accuracy data and check spec."
+9223     PRINT 
+9224     PRINT "Viewdata:  Display current test data."
+9225     PRINT 
+9226     PRINT "Hardcopy:  For a hardcopy of the current data."
+9227     SELECT Test_mode$
+9228     CASE "FSP","FSC"
+9229        PRINT 
+9230        PRINT "JANITOR:   Return to the Test Menu."
+9231     CASE ELSE
+9232        PRINT "Remeasure:  Use this to load previous data so that"
+9233        PRINT "            just one step can be remeasured."
+9234        PRINT "JANITOR:    return to JANITOR"
+9235     END SELECT
+9236     OFF KEY 
+9237     ON KEY 0 LABEL "ADJUST" GOTO Adjust
+9238     ON KEY 2 LABEL "MEASURE" GOTO Verify
+9239     ON KEY 4 LABEL "SPEC" GOTO Spec_data
+9240     ON KEY 5 LABEL "Viewdat" GOTO Viewdata
+9241     ON KEY 7 LABEL "Hardcpy" GOTO Hardcopy
+9242     SELECT Test_mode$
+9243     CASE "FSC","FSP"
+9244     !
+9245     CASE ELSE
+9246        ON KEY 6 LABEL "Remeasur" GOTO Load_attdata
+9247     END SELECT
+9248     ON KEY 9 LABEL "JANITOR" GOTO To_janitor
+9249  !
+9250     BEEP 200,.05
+9251     BEEP 400,.05
+9252     BEEP 600,.05
+9253 Waiting:GOTO Waiting
+9254  !
+9255  !--------------------------------------
+9256  ! Combine Attenuator data from disc file
+9257  ! with Power Accuracy data and check
+9258  ! against specs.
+9259  !--------------------------------------
+9260 Spec_data:   !
+9261     OFF KEY 
+9262     ON KEY 9 LABEL "ABORT" RECOVER Cal_ver_menu
+9263     Clr_scr
+9264     At_cal_out(Model$,Ser_no$,Test_mode$,"LOAD",Error$,P_f,0,"ALL",Hd$,Crud$,Attdata(*))
+9265     SELECT Error$
+9266     CASE "?"
+9267        Clr_scr
+9268        PRINT "No attenuator data exists for this unit !!!"
+9269        DISP "PRESS CONTINUE TO RETURN TO LAST MENU"
+9270        BEEP 
+9271        Wait_for_cont
+9272     CASE ELSE
+9273        Clr_scr
+9274        Test_run=1
+9275        FOR Step=10 TO 90 STEP 10
+9276           P_f=0
+9277           IF Attdata(0,Step/10)<>0 THEN 
+9278              At_cal_out(Model$,Ser_no$,Test_mode$,"DISPLAY",Error$,P_f,0,VAL$(Step)&",",Hd$,Crud$,Attdata(*))
+9279           END IF
+9280           IF P_f=-1 THEN Fail_flag(Step/10)=1
+9281           IF P_f=1 THEN Fail_flag(Step/10)=1
+9282           IF P_f=0 THEN Test_run=0
+9283           SELECT P_f
+9284           CASE 1
+9285              PRINT VAL$(Step)&"dB STEP PASSED !!"
+9286              BEEP 1500,.2
+9287              BEEP 700,.2
+9288              BEEP 1800,.2
+9289           CASE -1
+9290              PRINT VAL$(Step)&"dB STEP FAILED !!"
+9291              BEEP 700,.2
+9292              BEEP 1500,.2
+9293              BEEP 100,.2
+9294           CASE ELSE
+9295              PRINT VAL$(Step)&"dB STEP WAS NOT TESTED !!"
+9296              BEEP 700,.2
+9297              BEEP 1500,.2
+9298           END SELECT
+9299        NEXT Step
+9300        ALPHA ON
+9301        DISP "PRESS CarryOn TO RETURN TO MENU..."
+9302        Wait_for_cont
+9303     END SELECT
+9304     GOTO Cal_ver_menu
+9305  !
+9306  !-------------------------------------
+9307  ! SET UP INFORMATION
+9308  !-------------------------------------
+9309  !
+9310 Set_up:   !
+9311  !
+9312     IF FNDut_has("REAR OUT",Opt$) THEN 
+9313        Clr_scr
+9314        PRINT "  ****************************"
+9315        PRINT "       REAR PANEL OUTPUT  "
+9316        PRINT "    Connect a 50 ohm load to"
+9317        PRINT "    the AUX output..."
+9318        PRINT "  ****************************"
+9319        BEEP 600,.5
+9320        OFF KEY 
+9321        Wait_for_cont
+9322     END IF
+9323  !
+9324     OFF KEY 
+9325  !  ON KEY 5 LABEL "CarryOn" RECOVER Got_set_up
+9326     ALPHA OFF
+9327     Clr_scr
+9328     CALL At_setup(Test_mode$)
+9329     Pad_out=0
+9330     BEEP 500,.03
+9331  !
+9332 Hold_it:!
+9333     Wait_for_cont
+9334  !
+9335 Got_set_up:!
+9336     OFF KEY 
+9337     RETURN 
+9338  !
+9339  !-----------------------------------
+9340  ! GET ATTENUATOR DATA OFF THE DISK
+9341  !-----------------------------------
+9342  !
+9343 Load_attdata:       !
+9344  !
+9345     Clr_scr
+9346     PRINT "  This is a special key which loads previous "
+9347     PRINT "  attenuator data for instrument no.";Ser_no$;" into "
+9348     PRINT "  memory."
+9349     PRINT 
+9350     PRINT "  It allows you to stop in the middle of the test"
+9351     PRINT "  and come back later."
+9352     OFF KEY 
+9353     ON KEY 5 LABEL "GetData" GOTO Load_atdata
+9354     ON KEY 9 LABEL "ABORT" GOTO Cal_ver_menu
+9355  !
+9356     GOTO Lunch
+9357  !
+9358 Load_atdata:       !
+9359     At_cal_out(Model$,Ser_no$,Test_mode$,"LOAD",Error$,P_f,0,"ALL",Hd$,Crud$,Attdata(*))
+9360     IF Error$="?" THEN 
+9361        DISP " NO DATA FOUND!!"
+9362        BEEP 1000,.1
+9363        WAIT .7
+9364     END IF
+9365     GOTO Cal_ver_menu
+9366  !
+9367  !
+9368 Adjust:Adjust_mode=1
+9369     Calco_adjusted=1
+9370     GOTO Disp_setup
+9371  !
+9372 Verify:Adjust_mode=0
+9373     IF Jan_mode$<>"MENU" THEN Valid_ref=0
+9374  !
+9375 Disp_setup:  !
+9376     Store$="DO store"
+9377     SELECT Test_mode$
+9378     CASE "FSP","FSC"
+9379        GOSUB Set_up
+9380     CASE ELSE
+9381        IF Jan_mode$="MENU" THEN GOSUB Set_up
+9382     END SELECT
+9383  !
+9384     Set_standards("EXT")
+9385     SELECT Test_mode$
+9386     CASE "FSP","FSC"
+9387        Clr_scr
+9388        PRINT 
+9389        PRINT "Connect the Local Oscillator's '10 MHz REF OUTPUT'"
+9390        PRINT "to the HP 3585A's 'EXT REF IN'."
+9391        PRINT 
+9392        Wait_for_cont
+9393        Instr_present(@Dut,"Device Under Test")
+9394        Instr_present(@Lo,"Local Oscillator")
+9395        Instr_present(@Lfsa,"Spectrum Analyzer (HP 3585A)")
+9396     END SELECT
+9397     IF Fltdat_loaded=0 AND No_flat_flag=0 THEN GOSUB Get_flatdat
+9398     SELECT Test_mode$
+9399     CASE "FSP","FSC"
+9400     !
+9401     CASE ELSE
+9402        IF Jan_mode$<>"MENU" THEN GOTO Hc_all
+9403     END SELECT
+9404  !
+9405  !-------------------------
+9406  !  STEP MENU
+9407  !-------------------------
+9408  !
+9409 Step_menu:  !
+9410  !
+9411     Clr_scr
+9412     Atten=0
+9413     IF Adjust_mode THEN 
+9414        PRINT "     *** ATTENUATOR CALIBRATION ***"
+9415     ELSE
+9416        PRINT "     *** ATTENUATOR VERIFICATION ***"
+9417     END IF
+9418     PRINT 
+9419     PRINT "  SELECT A KEY BELOW :"
+9420     PRINT 
+9421     PRINT "      Key 0. Measure all the steps (10 to 90)"
+9422     PRINT "             starting with the 10 dB step."
+9423     PRINT 
+9424     PRINT "Shift Key 0. Measure ALL - no hard copy."
+9425     PRINT 
+9426     PRINT "Shift key 4. Sets Recal flag to zero."
+9427     PRINT 
+9428     PRINT "Keys 1-3 and 5-8. Measure the indicated step."
+9429     PRINT 
+9430     PRINT "      Key 4. MORE  for more keys ..."
+9431     PRINT 
+9432     PRINT "      Key 9. Return to the attenuator test menu."
+9433     PRINT 
+9434     OFF KEY 
+9435     ON KEY 0 LABEL " ALL" GOTO Hc_all
+9436     ON KEY 1 LABEL " 10 dB" GOTO At10
+9437     ON KEY 2 LABEL " 20 dB" GOTO At20
+9438     ON KEY 3 LABEL " 30 dB" GOTO At30
+9439     ON KEY 4 LABEL " MORE" GOTO More_keys
+9440     ON KEY 5 LABEL " 40 dB " GOTO At40
+9441     ON KEY 6 LABEL " 50 dB " GOTO At50
+9442     ON KEY 7 LABEL " 60 dB" GOTO At60
+9443     ON KEY 8 LABEL " 70 dB" GOTO At70
+9444     ON KEY 9 LABEL " EXIT" GOTO Cal_ver_menu
+9445     ON KEY 10 GOTO Sc_all
+9446     ON KEY 11 GOTO At80
+9447     ON KEY 12 GOTO At90
+9448     ON KEY 13 GOTO At100
+9449     ON KEY 14 GOSUB Recal_again
+9450     ON KEY 19 GOTO Dont_store
+9451  !
+9452     BEEP 650,.05
+9453     BEEP 400,.08
+9454 Jail:GOTO Jail
+9455  !
+9456 More_keys:     !
+9457     Clr_scr
+9458     IF Adjust_mode THEN 
+9459        PRINT "     *** ATTENUATOR CALIBRATION ***"
+9460     ELSE
+9461        PRINT "     *** ATTENUATOR VERIFICATION ***"
+9462     END IF
+9463     PRINT 
+9464     PRINT "  SELECT A KEY BELOW :"
+9465     PRINT 
+9466     PRINT "  Key 0. RECAL 0, re-measures the 0 dB reference."
+9467     PRINT 
+9468     PRINT "  Key 2. RECAL 30 re-measures the 30 dB reference."
+9469     PRINT 
+9470     PRINT "Keys 5-7. Measure the indicated step."
+9471     PRINT 
+9472     PRINT "  Key 9. RETURN returns you to previous menu."
+9473 Label_2nd_keys:      !
+9474     OFF KEY 
+9475     ON KEY 0 LABEL "RECAL 0" GOTO Recal_0
+9476     ON KEY 2 LABEL "RECAL30" GOTO Recal_30
+9477     ON KEY 5 LABEL " 80 dB" GOTO At80
+9478     ON KEY 6 LABEL " 90 dB" GOTO At90
+9479     ON KEY 7 LABEL "-100dBm" GOTO At100
+9480     ON KEY 9 LABEL "RETURN" GOTO Step_menu
+9481     SELECT Test_mode$
+9482     CASE "FSP","FSC"
+9483     !
+9484     CASE ELSE
+9485        ON KEY 4 LABEL Store$ GOTO Dont_store
+9486     END SELECT
+9487  !
+9488     BEEP 400,.08
+9489     BEEP 650,.05
+9490     GOTO Jail
+9491  !
+9492  !--------------------------------------
+9493  !  don't store data (a toggle function)
+9494  !--------------------------------------
+9495  !
+9496 Dont_store:     !
+9497     IF Dont_store=1 THEN  ! ...
+9498        DISP "      << Data will not be stored >>"
+9499        BEEP 700,.1
+9500        Dont_store=1
+9501        Store$="DONT sto"
+9502     ELSE
+9503        DISP "      << Data will be stored >>"
+9504        BEEP 700,.1
+9505        Dont_store=0
+9506        Store$="DO store"
+9507     END IF
+9508     GOTO Label_2nd_keys
+9509  !
+9510  !-------------------------
+9511  ! measure all the steps
+9512  !-------------------------
+9513  !
+9514 Recal_again: !
+9515     Valid_ref=0
+9516     RETURN 
+9517  !
+9518 Sc_all:Data_dest$="DISPLAY"
+9519     GOTO Measure_all
+9520  !
+9521 Hc_all:Data_dest$="PRINT"
+9522     DISP "  HARDCOPY SELECTED "
+9523     BEEP 600,.1
+9524  !
+9525 Measure_all:  !
+9526  !
+9527     GOSUB Put_in_pad
+9528  !
+9529     OFF KEY 
+9530     ON KEY 9 LABEL " ABORT" RECOVER Step_menu
+9531  !
+9532     IF Test_mode$="FSP" OR Test_mode$="FSC" THEN Valid_ref=0
+9533     IF Valid_ref=0 THEN GOSUB Recal
+9534  !
+9535     Test_all=1
+9536     First_fail_flg=0
+9537  !
+9538     FOR Atten=10 TO 70 STEP 10
+9539  !
+9540  !  ...adjust if requested
+9541        IF Adjust_mode THEN 
+9542           Measure_step(Test_mode$,Atten,Startf,Stopf,F_inc,If_freq,Attdata(*))
+9543           GOSUB Calibrate
+9544        END IF
+9545        Measure_step(Test_mode$,Atten,Startf,Stopf,F_inc,If_freq,Attdata(*))
+9546        GOSUB Store_data
+9547  !
+9548  ! ...print out reference trace
+9549        IF Atten=10 THEN 
+9550           IF Data_dest$="PRINT" THEN 
+9551              PRINTER IS Print
+9552              Top_of_page
+9553              PRINTER IS Crt
+9554           END IF
+9555           At_cal_out(Model$,Ser_no$,Test_mode$,Data_dest$,Error$,P_f,0,"REF00_,",Rev$,Opt$,Attdata(*))
+9556        END IF
+9557  !
+9558  ! ...print out measured step and check spec
+9559        At_cal_out(Model$,Ser_no$,Test_mode$,Data_dest$,Error$,P_f,0,VAL$(Atten)&",",Rev$,Opt$,Attdata(*))
+9560        GOSUB Check_spec
+9561     NEXT Atten
+9562  !
+9563  !----------------------------------
+9564  !  MEASURE THE 80 AND 90 dB STEPS
+9565  !----------------------------------
+9566  !
+9567 Meas80_90:     !
+9568  !
+9569     GOSUB Meas30_ref
+9570     At_cal_out(Model$,Ser_no$,Test_mode$,Data_dest$,Error$,P_f,0,"REF30_,",Rev$,Opt$,Attdata(*))
+9571  !
+9572     FOR Atten=80 TO 90 STEP 10
+9573  !
+9574  ! .... adjust if possible and if requested
+9575        IF Adjust_mode THEN 
+9576           IF FNCal_location("AT80 SLOPE")<>0 THEN 
+9577              Measure_step(Test_mode$,Atten,Startf,Stopf,F_inc,If_freq,Attdata(*))
+9578              GOSUB Add_30db_data
+9579              GOSUB Calibrate
+9580           END IF
+9581        END IF
+9582   !
+9583   ! ... verify step
+9584        Measure_step(Test_mode$,Atten,Startf,Stopf,F_inc,If_freq,Attdata(*))
+9585        GOSUB Add_30db_data
+9586        GOSUB Store_data
+9587  !
+9588  ! ... printout step
+9589        At_cal_out(Model$,Ser_no$,Test_mode$,Data_dest$,Error$,P_f,0,VAL$(Atten)&",",Rev$,Opt$,Attdata(*))
+9590        GOSUB Check_spec
+9591     NEXT Atten
+9592  !
+9593     IF Jan_mode$<>"MENU" THEN GOTO To_janitor
+9594  !
+9595     GOTO Step_menu
+9596  !
+9597  !--------------------------------------
+9598  !  subroutine to measure 30 dB reference
+9599  !--------------------------------------
+9600  !
+9601 Meas30_ref:!
+9602     IF Attdata(0,3)<>0 THEN 
+9603        GOSUB Take_out_pad
+9604        GOSUB Get_30_ref
+9605     ELSE ! need to measure 30 dB w/ pad in
+9606        GOSUB Put_in_pad
+9607        IF Valid_ref=0 THEN GOSUB Recal
+9608        Measure_step(Test_mode$,30,Startf,Stopf,F_inc,If_freq,Attdata(*))
+9609        Temp=Atten
+9610        Atten=30
+9611        Atten=Temp
+9612        GOSUB Take_out_pad
+9613        GOSUB Get_30_ref
+9614     END IF
+9615     RETURN 
+9616  !
+9617  !-----------------------
+9618  !  take out pad message
+9619  !-----------------------
+9620  !
+9621 Take_out_pad: !
+9622     IF Pad_out=0 THEN 
+9623        Clr_scr
+9624        PRINT "  Connect the "&Model$&" RF OUTPUT directly"
+9625        PRINT "         to the mixer RF INPUT."
+9626        DISP " --Press CarryOn when ready"
+9627        BEEP 600,.1
+9628        Wait_for_cont
+9629        Pad_out=1
+9630     END IF
+9631     RETURN 
+9632  !
+9633  !
+9634  ! -----------------------
+9635  !   put in pad message
+9636  ! -----------------------
+9637  !
+9638 Put_in_pad:     !
+9639     IF Pad_out=1 THEN 
+9640        Clr_scr
+9641        PRINT "      INSTALL a 20 dB pad between"
+9642        PRINT "       the DUT output and the RF "
+9643        PRINT "       port of the mixer !!"
+9644        DISP " -- Press CarryOn when ready "
+9645        BEEP 700,.02
+9646        Wait_for_cont
+9647        Pad_out=0
+9648     END IF
+9649     RETURN 
+9650  !
+9651  !-------------------------------
+9652  ! measure 30 dB reference trace
+9653  !-------------------------------
+9654  !
+9655 Get_30_ref:!
+9656     IF Attdata(0,11)<>0 THEN RETURN 
+9657     Measure_step(Test_mode$,30,Startf,Stopf,F_inc,If_freq,Attdata(*),1)
+9658     RETURN 
+9659  !
+9660  !-------------------------
+9661  !  measure a step
+9662  !-------------------------
+9663  !
+9664 At100:Atten=Atten+10
+9665 At90:Atten=Atten+10
+9666 At80:Atten=Atten+10
+9667 At70:Atten=Atten+10
+9668 At60:Atten=Atten+10
+9669 At50:Atten=Atten+10
+9670 At40:Atten=Atten+10
+9671 At30:Atten=Atten+10
+9672 At20:Atten=Atten+10
+9673 At10:Atten=Atten+10
+9674  !
+9675     OFF KEY 
+9676     ON KEY 9 LABEL " ABORT" RECOVER Step_menu
+9677  !
+9678     Data_dest$="DISPLAY"
+9679     Test_all=0
+9680  !
+9681     IF Atten>70 THEN 
+9682        GOSUB Meas30_ref
+9683        IF FNCal_location("AT80 SLOPE")=0 THEN Dont_adjust
+9684     ELSE
+9685        GOSUB Put_in_pad
+9686     END IF
+9687  !
+9688     IF Valid_ref=0 THEN GOSUB Recal
+9689     IF Adjust_mode=0 THEN Dont_adjust
+9690  !
+9691     Measure_step(Test_mode$,Atten,Startf,Stopf,F_inc,If_freq,Attdata(*))
+9692     GOSUB Calibrate
+9693  !
+9694 Dont_adjust:     !
+9695  !
+9696     Measure_step(Test_mode$,Atten,Startf,Stopf,F_inc,If_freq,Attdata(*))
+9697  !
+9698     IF Atten>70 THEN GOSUB Add_30db_data
+9699  !
+9700     GOSUB Store_data
+9701     At_cal_out(Model$,Ser_no$,Test_mode$,Data_dest$,Error$,P_f,0,VAL$(Atten)&",",Rev$,Opt$,Attdata(*))
+9702     GOTO Step_menu
+9703  !
+9704  !--------------------------------------
+9705  ! RE-MEASURE THE 0 dB REFERENCE STEP
+9706  !--------------------------------------
+9707  !
+9708 Recal_0:  !
+9709     OFF KEY 
+9710     ON KEY 9 LABEL "ABORT" RECOVER Step_menu
+9711     GOSUB Put_in_pad
+9712     GOSUB Recal
+9713     GOTO Step_menu
+9714  !
+9715  !-------------------------------------
+9716  ! RE-MEASURE THE 30 dB REFERENCE STEP
+9717  !     with the pad out
+9718  !-------------------------------------
+9719  !
+9720 Recal_30:    !
+9721     ON KEY 9 LABEL "ABORT" RECOVER Abort_30
+9722     Attdata(0,11)=0
+9723     GOSUB Meas30_ref
+9724     GOTO Step_menu
+9725 Abort_30:    !
+9726     Attdata(0,11)=0
+9727     GOTO Step_menu
+9728  !
+9729  !---------------------------------
+9730  !   SUBROUTINE WHICH MEASURES
+9731  !   0 DB STEP OF DUT ATTENUATOR
+9732  !---------------------------------
+9733  !
+9734 Recal:  !
+9735     Clr_scr
+9736     PRINT " ...initializing for calibration"
+9737  !
+9738     SELECT Test_mode$
+9739     CASE "FSP","FSC"
+9740        Set_et16841(@Atn,"A70")
+9741     CASE ELSE
+9742        Set_et16841(@Atn,"IP,R1,P1,N0,A70")
+9743     END SELECT
+9744     OUTPUT @Lo;"IP CW";Init_f-If_freq;"GZ PL10DB"
+9745     OUTPUT @Dut;"IP PL0DB CW";Init_f;"GZ SHPS0DB"
+9746     CLEAR @Lfsa
+9747     OUTPUT @Lfsa;"SV4 AL0 RL-25DM R02 S3";If_freq*1000;"MZ RB30HZ CA"
+9748     OUTPUT @Lfsa;"MC T6RC4"
+9749     WAIT .1
+9750     OUTPUT @Lfsa;"MR RLUP MR DD2DB"
+9751     OUTPUT @Lfsa;"RLUPUPUPUP"
+9752     OUTPUT @Lfsa;"VB10HZ"
+9753     Valid_ref=0
+9754     Measure_step(Test_mode$,0,Startf,Stopf,F_inc,If_freq,Attdata(*))
+9755     Valid_ref=1
+9756     RETURN 
+9757  !
+9758  !-------------------------------------
+9759  !  GET THE DUT'S POWER ACCURACY DATA
+9760  !-------------------------------------
+9761  !
+9762 Get_flatdat: !
+9763  !
+9764     Get_pwr_data(Model$,Ser_no$,Test_mode$,Data_rev$,Data_opt$,Error_code)
+9765     IF Error_code=0 THEN 
+9766        Fltdat_loaded=1
+9767        RETURN 
+9768     END IF
+9769  !
+9770 No_flatdat:    !
+9771     OFF ERROR 
+9772     Clr_scr
+9773     PRINT "------------------------------------------------"
+9774     PRINT "  POWER ACCURACY DATA FOR INSTRUMENT SERIAL NO. :"
+9775     PRINT 
+9776     PRINT "           ";Ser_no$;"    NOT FOUND !!!"
+9777     PRINT 
+9778     SELECT Test_mode$
+9779     CASE "FSP","FSC"
+9780        PRINT "         RETURN TO THE TEST MENU AND RUN"
+9781        PRINT "         THE OUTPUT POWER ACCURACY TEST!"
+9782        PRINT 
+9783        PRINT "------------------------------------------------"
+9784        WAIT 7
+9785        GOTO Cal_ver_menu
+9786     CASE ELSE
+9787        PRINT 
+9788        PRINT "------------------------------------------------"
+9789        IF FNYes("Should the test be done without Pwracc data ?")=0 THEN Cal_ver_menu
+9790     END SELECT
+9791     No_flat_flag=1
+9792     RETURN 
+9793  !
+9794  !--------------------------------------
+9795  !   AUTO CALIBRATE THE 8340 ATTENUATOR
+9796  !--------------------------------------
+9797  !
+9798 Calibrate:    !
+9799     DISP " ... calibrating the ";Atten;" dB step"
+9800     X1=Attdata(0,Atten/10)/1000
+9801     X_inc=Attdata(1,Atten/10)/10000
+9802     I=2
+9803     Xend=20
+9804     X=X1
+9805     GOSUB Sum_it
+9806     Lo_slope=(Sumxy-(Sumx*Sumy/N))/(Sumxsqr-(Sumx^2)/N)
+9807     Lo_ofst=(Sumy/N)-(Lo_slope*Sumx/N)
+9808     IF FNDut_has("BAND 4",Opt$) THEN 
+9809        Xend=26.5
+9810        GOSUB Sum_it
+9811        Hi_slope=(Sumxy-(Sumx*Sumy/N))/(Sumxsqr-(Sumx^2)/N)
+9812        Hi_ofst=(Sumy/N)-(Lo_slope*Sumx/N)
+9813     END IF
+9814  !
+9815  !-----------------------------
+9816  ! plot curve fit lines
+9817  !-----------------------------
+9818  !
+9819     IF Plot_curve=1 THEN 
+9820        Xdis=X1
+9821        GRAPHICS ON
+9822        MOVE X1,Lo_slope*X1+Lo_ofst
+9823        LINE TYPE 5
+9824        Bkpt_cor=Hi_slope*20+Hi_ofst-Lo_slope*20-Lo_ofst
+9825        REPEAT
+9826           IF Xdis<=20 THEN 
+9827              DRAW Xdis,Lo_slope*Xdis+Lo_ofst
+9828           ELSE
+9829              DRAW Xdis,Hi_slope*Xdis+Hi_ofst-Bkpt_cor
+9830           END IF
+9831           Xdis=Xdis+X_inc
+9832        UNTIL Xdis>Xend
+9833  !
+9834  !
+9835 Print_calc:    !
+9836        PRINT "  CALCULATIONS FOR THE ";Atten;" dB STEP"
+9837        PRINT 
+9838 Fmt1:  IMAGE 13A,3X,SDD.DDD
+9839        PRINT USING Fmt1;" LO OFFSET=",Lo_ofst
+9840        PRINT USING Fmt1;" LO SLOPE =",Lo_slope
+9841        PRINT USING Fmt1;" HI SLOPE =",Hi_slope
+9842     END IF
+9843  !
+9844  !----------------------------
+9845  ! calculate new cal numbers
+9846  !----------------------------
+9847  !
+9848 Calculatin:    !
+9849  !
+9850  !------------------------------
+9851  !  adjust the cal constants
+9852  !------------------------------
+9853  !
+9854     Offset$="AT"&VAL$(Atten)&" OFFSET"
+9855     Slope$="AT"&VAL$(Atten)&" SLOPE"
+9856     Hi_slp$="AT"&VAL$(Atten)&" SLP 20GZ"
+9857  !
+9858  !..... RETURN if the cal constant doesn't exist for this step
+9859     IF FNCal_location(Offset$)=0 THEN RETURN 
+9860  !
+9861  !  ...offset
+9862     Oldofst=FNRead_cal(@Dut,FNCal_location(Offset$))
+9863     Ofst_cal=INT(((Lo_ofst)/.05)+.5)
+9864     IF ABS(Oldofst+Ofst_cal)>40 THEN 
+9865        PRINT " Offset cal constant for "&VAL$(Atten)&" dB step out of range !!"
+9866        BEEP 
+9867        WAIT 5
+9868        SELECT Oldofst+Ofst_cal
+9869        CASE >0
+9870           Sign=1
+9871           Write_cal(@Dut,FNCal_location(Offset$),40)
+9872        CASE <0
+9873           Sign=-1
+9874           Write_cal(@Dut,FNCal_location(Offset$),-40)
+9875        END SELECT
+9876     ELSE
+9877        Sign=0
+9878        Write_cal(@Dut,FNCal_location(Offset$),(Oldofst+Ofst_cal))
+9879     END IF
+9880  !
+9881  !  ...slope
+9882     Slope_cal=-INT((Lo_slope/.00675)+.5)
+9883     Lo_bnd_slp=FNRead_cal(@Dut,FNCal_location("LO SLOPE"))
+9884     Oldslp=FNRead_cal(@Dut,FNCal_location(Slope$))
+9885  !
+9886  !    ....  check for out of range
+9887     IF Lo_bnd_slp+Oldslp+Slope_cal<0 THEN 
+9888        PRINT " Slope constant for ";Atten;" dB step out of range !!"
+9889        FOR I=1 TO 10
+9890           BEEP 700,.05
+9891           WAIT .05
+9892        NEXT I
+9893        WAIT 5
+9894        !
+9895        Write_cal(@Dut,FNCal_location(Slope$),(-Lo_bnd_slp))
+9896        !
+9897     ELSE
+9898        Write_cal(@Dut,FNCal_location(Slope$),(Oldslp+Slope_cal))
+9899     END IF
+9900  !
+9901  !
+9902  !  .... slope 20-26.5 GHz
+9903     IF FNDut_has("BAND 4",Opt$) THEN 
+9904        Cal_20ghz=-INT(((Hi_slope-Lo_slope)/.01)+.5)
+9905        Old20=FNRead_cal(@Dut,FNCal_location(Hi_slp$))
+9906        Write_cal(@Dut,FNCal_location(Hi_slp$),(Old20+Cal_20ghz))
+9907     END IF
+9908  !
+9909     Of$="      "
+9910     Sl$="        "
+9911     IF Offset THEN Of$="LIMIT"
+9912     IF Slope THEN Sl$="LIMIT"
+9913  !
+9914     DISP 
+9915     PRINT 
+9916     PRINT "  ADJUSTED CAL CONSTANTS TO :"
+9917     PRINT "  offset"&Of$&"slope"&Sl$&"20 GHz slope"
+9918     PRINT "   ";
+9919     !
+9920     IF ABS(Sign) THEN 
+9921        PRINT (40)*Sign;
+9922     ELSE
+9923        PRINT Oldofst+Ofst_cal;"         ";
+9924     END IF
+9925     !
+9926     IF Sign2 THEN 
+9927        PRINT -Lo_bnd_slope;"            ";
+9928     ELSE
+9929        PRINT Oldslp+Slope_cal;"            ";
+9930     END IF
+9931     !
+9932     IF FNDut_has("BAND 4",Opt$) THEN 
+9933        PRINT Old20+Cal_20ghz
+9934     ELSE
+9935        PRINT "------"
+9936     END IF
+9937     PRINT 
+9938     WAIT 5
+9939     RETURN 
+9940  !
+9941  !-------------------------
+9942  ! SUM IT SUBROUTINE
+9943  !-------------------------
+9944  !
+9945 Sum_it:    !
+9946     Sumx=0
+9947     Sumy=0
+9948     Sumxy=0
+9949     Sumxsqr=0
+9950     N=0
+9951  !
+9952     REPEAT
+9953        Sumx=Sumx+X
+9954        Sumy=Sumy+Attdata(I,Atten/10)/100
+9955        Sumxy=Sumxy+X*Attdata(I,Atten/10)/100
+9956        Sumxsqr=Sumxsqr+X^2
+9957        I=I+1
+9958        N=N+1
+9959        X=X+X_inc
+9960     UNTIL X>Xend
+9961  !
+9962     RETURN 
+9963  !
+9964  !
+9965  !
+9966  !--------------------------------
+9967  !  add the 30 dB reference data
+9968  !  to the 80 or 90 dB step
+9969  !--------------------------------
+9970  !
+9971 Add_30db_data:    !
+9972     FOR I=2 TO 201
+9973        Attdata(I,Atten/10)=Attdata(I,Atten/10)+Attdata(I,3)
+9974     NEXT I
+9975     RETURN 
+9976  !
+9977  !--------------------------------
+9978  !  CHECK P_F flag from At_cal_out
+9979  !  if individual step fails
+9980  !  Fail_count is incremented,
+9981  !  except in test all mode.
+9982  !--------------------------------
+9983  !
+9984 Check_spec:    !
+9985  !
+9986     IF No_flat_flag=0 THEN 
+9987        Test_run=1  ! if it got this far then test has been run
+9988     END IF
+9989     IF P_f=-1 THEN Fail_flag(Atten/10)=1
+9990     IF P_f=1 THEN Fail_flag(Atten/10)=0
+9991  !
+9992     IF Fail_flag(Atten/10)=1 THEN 
+9993        IF Test_all=1 THEN 
+9994           IF First_fail_flg=0 THEN 
+9995              First_fail_flg=1
+9996              CALL Fail_count
+9997           END IF
+9998        ELSE
+9999           CALL Fail_count
+10000       END IF
+10001    END IF
+10002 !
+10003    RETURN 
+10004 !
+10005 !
+10006 !--------------------------
+10007 !   STORE DATA
+10008 !--------------------------
+10009 !
+10010 Store_data:   !
+10011 !
+10012    IF Dont_store=1 THEN 
+10013       DISP "        << no data stored !!! >>"
+10014       BEEP 500,.05
+10015       WAIT .2
+10016       RETURN 
+10017    END IF
+10018    At_cal_out(Model$,Ser_no$,Test_mode$,"STORE",Error$,P_f,0,"ALL",Rev$,Opt$,Attdata(*))
+10019 !
+10020    RETURN 
+10021 !
+10022 !
+10023 !-------------------------------
+10024 !   DATA OUTPUT ROUTINES
+10025 !-------------------------------
+10026 Viewdata: !
+10027 !
+10028    Data_dest$="DISPLAY"
+10029    GOTO Plot_it
+10030 !
+10031 Hardcopy: !
+10032 !
+10033    Data_dest$="PRINT"
+10034 !
+10035 Plot_it: !
+10036    Atten=0
+10037    Clr_scr
+10038    PRINT "++++++++++++++++++++++++++++++++++++++++++++++++"
+10039    PRINT "     ATTENUATOR CALIBRATION AND VERIFICATION "
+10040    PRINT "    >>> DATA OUTPUT SELECTION   pg 1 of 2 <<<"
+10041    PRINT "++++++++++++++++++++++++++++++++++++++++++++++++"
+10042    PRINT 
+10043    PRINT 
+10044    IF Raw THEN 
+10045       PRINT "   Select a key below :     <<< RAW DATA >>>"
+10046    ELSE
+10047       PRINT "   Select a key below :   "
+10048    END IF
+10049    PRINT 
+10050    PRINT 
+10051    PRINT "  ALL     :   Plot all the steps."
+10052    PRINT 
+10053    PRINT "10,20 etc :   Plot the selected step."
+10054    PRINT 
+10055    PRINT " MORE     :   Displays next page of Output Menu."
+10056    PRINT 
+10057    PRINT " EXIT     :   Return to the Attenuator Test Menu."
+10058    IF Data_dest$="PRINT" THEN DISP "        ** hardcopy selected ** "
+10059    OFF KEY 
+10060    ON KEY 0 LABEL " ALL" GOTO Pall
+10061    ON KEY 1 LABEL " 10 dB" GOTO P10
+10062    ON KEY 2 LABEL " 20 dB" GOTO P20
+10063    ON KEY 3 LABEL " 30 dB" GOTO P30
+10064    ON KEY 4 LABEL "MORE" GOTO Out_menu_2
+10065    ON KEY 5 LABEL " 40 dB" GOTO P40
+10066    ON KEY 6 LABEL " 50 dB" GOTO P50
+10067    ON KEY 7 LABEL " 60 dB" GOTO P60
+10068    ON KEY 8 LABEL " 70 dB" GOTO P70
+10069    ON KEY 9 LABEL " EXIT" GOTO Cal_ver_menu
+10070 !
+10071 Lunch:GOTO Lunch
+10072 !
+10073 Out_menu_2:   !
+10074    OFF KEY 
+10075    Clr_scr
+10076    PRINT "++++++++++++++++++++++++++++++++++++++++++++++++"
+10077    PRINT "     ATTENUATOR CALIBRATION AND VERIFICATION "
+10078    PRINT "    >>> DATA OUTPUT SELECTION   pg 2 of 2 <<<"
+10079    PRINT "++++++++++++++++++++++++++++++++++++++++++++++++"
+10080    PRINT 
+10081    IF Raw THEN 
+10082       PRINT "   Select a key below :     <<< RAW DATA >>>"
+10083    ELSE
+10084       PRINT "   Select a key below :  "
+10085    END IF
+10086    PRINT 
+10087    PRINT "80,90,100 :   Plot the 80, 90 or 100 dB data."
+10088    PRINT 
+10089    PRINT "PAGE 1    :   Return to the output menu page 1."
+10090    PRINT 
+10091    PRINT "REF 0     :   Plot the 0 dB reference trace."
+10092    PRINT 
+10093    PRINT "REF 30    :   Plot the 30 dB reference trace."
+10094    PRINT 
+10095    IF Raw THEN 
+10096       PRINT "NORMAL    :   Plot normal, corrected output data."
+10097    ELSE
+10098       PRINT "RAW       :   Plot raw attenuator step data."
+10099    END IF
+10100    PRINT 
+10101    PRINT "EXIT      :   Return to the Attenuator Test Menu."
+10102    ON KEY 0 LABEL " 80 dB" GOTO P80
+10103    ON KEY 1 LABEL " 90 dB" GOTO P90
+10104    ON KEY 2 LABEL "100 dB" GOTO P100
+10105    ON KEY 4 LABEL "PAGE 1" GOTO Plot_it
+10106    ON KEY 5 LABEL "REF 0" GOTO P0
+10107    ON KEY 6 LABEL "REF 30" GOTO P110
+10108    IF Raw THEN 
+10109       ON KEY 7 LABEL "NORMAL" GOTO Change_raw
+10110    ELSE
+10111       ON KEY 7 LABEL "RAW" GOTO Change_raw
+10112    END IF
+10113    ON KEY 9 LABEL " EXIT" GOTO Cal_ver_menu
+10114 !
+10115    LOOP
+10116    END LOOP
+10117 !
+10118 Change_raw:   !
+10119    Raw=NOT (Raw)
+10120    GOTO Out_menu_2
+10121 !
+10122 Pall:   !
+10123    OFF KEY 
+10124    ON KEY 9 LABEL "ABORT" RECOVER Plot_it
+10125    FOR Atten=0 TO 110 STEP 10
+10126       SELECT Atten
+10127       CASE 0
+10128          Stp$="REF00_"
+10129       CASE 110
+10130          Stp$="REF30_"
+10131       CASE ELSE
+10132          Stp$=VAL$(Atten)&","
+10133       END SELECT
+10134       IF Attdata(0,Atten/10)<>0 THEN 
+10135          At_cal_out(Model$,Ser_no$,Test_mode$,Data_dest$,Error$,P_f,Raw,Stp$,Rev$,Opt$,Attdata(*))
+10136       ELSE
+10137          Clr_scr
+10138          PRINT " NO DATA FOR THE ";Atten;" dB STEP !!"
+10139          BEEP 600,.05
+10140          WAIT .5
+10141       END IF
+10142    NEXT Atten
+10143    GOTO Cal_ver_menu
+10144 !
+10145 P110:Atten=Atten+10
+10146 P100:Atten=Atten+10
+10147 P90:Atten=Atten+10
+10148 P80:Atten=Atten+10
+10149 P70:Atten=Atten+10
+10150 P60:Atten=Atten+10
+10151 P50:Atten=Atten+10
+10152 P40:Atten=Atten+10
+10153 P30:Atten=Atten+10
+10154 P20:Atten=Atten+10
+10155 P10:Atten=Atten+10
+10156 P0: !
+10157 !
+10158    OFF KEY 
+10159    SELECT Atten
+10160    CASE 0
+10161       Stp$="REF00_"
+10162    CASE 110
+10163       Stp$="REF30_"
+10164    CASE ELSE
+10165       Stp$=VAL$(Atten)&","
+10166    END SELECT
+10167    IF Attdata(0,Atten/10)<>0 THEN 
+10168       At_cal_out(Model$,Ser_no$,Test_mode$,Data_dest$,Error$,P_f,Raw,Stp$,Rev$,Opt$,Attdata(*))
+10169    ELSE
+10170       Clr_scr
+10171       PRINT " NO DATA FOR THE ";Atten;" STEP !!"
+10172       BEEP 600,.05
+10173       WAIT .6
+10174    END IF
+10175    GOTO Plot_it
+10176 !
+10177 !
+10178 !
+10179 To_janitor:                           !
+10180 !
+10181    IF Test_run=1 THEN Pass_fail=1
+10182    FOR I=1 TO 10
+10183       IF Fail_flag(I)=1 THEN Pass_fail=-1
+10184    NEXT I
+10185    IF Pass_fail=1 THEN CALL Pass_count
+10186 !
+10187    IF Calco_adjusted=0 THEN SUBEXIT
+10188 !
+10189 !----------------------
+10190 ! update cal image
+10191 !----------------------
+10192    Update_image("CHECK OFF","AT10 OFFSET","AT20 OFFSET","AT30 OFFSET","AT40 OFFSET","AT50 OFFSET","AT60 OFFSET","AT70 OFFSET")
+10193    Update_image("CHECK OFF","AT10 SLOPE","AT20 SLOPE","AT30 SLOPE","AT40 SLOPE","AT50 SLOPE","AT60 SLOPE","AT70 SLOPE")
+10194    IF FNDut_has("BAND 4",Opt$) THEN 
+10195       Update_image("CHECK OFF","AT10 SLP 20GZ","AT20 SLP 20GZ","AT30 SLP 20GZ","AT40 SLP 20GZ","AT50 SLP 20GZ","AT60 SLP 20GZ","AT70 SLP 20GZ")
+10196    END IF
+10197 !
+10198    IF FNCal_location("AT80 OFFSET")<>0 THEN 
+10199       Update_image("CHECK ON","AT80 SLOPE","AT80 OFFSET","AT80 SLP 20GZ","AT90 SLOPE","AT90 OFFSET","AT90 SLP 20GZ")
+10200    ELSE
+10201       Update_image("CHECK ON")
+10202    END IF
+10203 !
+10204 SUBEND
+10205 !
+10206 !
+10207 Measure_step:SUB Measure_step(Test_mode$,Atten,Strtf,Stpf,F_inc,If_freq,INTEGER At(*),OPTIONAL Ref30)
+10208 !
+10209    COM /Hpib_codes/ @Dut,@Sa,@Lfsa,@Co,@Pw,@Dm,@Fn,@Rn,@Lo,@Mn,@Atn,@D12,@D13,@D14,@D15,@D16
+10210    COM /User_data/ Am_cal(*),Atten_cal(*),Pwr_sensor(*),Flatdata(*),User(*)
+10211 !
+10212    IF NPAR>7 THEN 
+10213       Ref30db=Ref30
+10214       At(0,11)=Strtf*1000
+10215       At(1,11)=F_inc*10000
+10216    ELSE
+10217       Ref30db=0
+10218       At(0,Atten/10)=Strtf*1000
+10219       At(1,Atten/10)=F_inc*10000
+10220    END IF
+10221 !
+10222    Clr_scr
+10223    SELECT Atten
+10224    CASE 100
+10225       OUTPUT @Dut;"PL-100DB"
+10226       Set_et16841(@Atn,"A00")
+10227       DISP " ... measuring the -100 dBm output."
+10228    CASE ELSE
+10229       SELECT Test_mode$
+10230       CASE "FSP","FSC"
+10231       !
+10232       CASE ELSE
+10233          IF Atten=0 OR Ref30db=1 THEN 
+10234             PRINT " ... measuring ";Atten;" dB reference step"
+10235          ELSE
+10236             PRINT " ... measuring ";Atten;" dB step"
+10237          END IF
+10238       END SELECT
+10239       OUTPUT @Dut;"AT";-Atten;"DB SHPS0DB"
+10240 !
+10241       IF Atten>70 OR Ref30db=1 THEN 
+10242          Set_et16841(@Atn,"A"&VAL$(70-Atten+20))
+10243       ELSE
+10244          Set_et16841(@Atn,"A"&VAL$(70-Atten))
+10245       END IF
+10246 !
+10247       IF Atten=0 OR Ref30db=1 THEN 
+10248          DISP " ... measuring the ";Atten;" dB reference step"
+10249       ELSE
+10250          DISP " ... measuring the ";Atten;" dB step"
+10251       END IF
+10252 !
+10253    END SELECT
+10254 !
+10255    Freq=Strtf
+10256    Index=2
+10257    REPEAT
+10258       Set_lo(Freq-If_freq)
+10259       OUTPUT @Dut;"CW";Freq;"GZ"
+10260       OUTPUT @Lfsa;"D1T6"
+10261       ENTER @Lfsa;Measured
+10262       SELECT Atten
+10263       CASE 0
+10264          At(Index,0)=INT((Measured+Atten_cal(7))*100)
+10265       CASE 30
+10266          IF Ref30db THEN 
+10267             At(Index,11)=INT((Measured+Atten_cal(7))*100)
+10268          ELSE
+10269             Corrected=INT((Measured+Atten_cal((70-Atten)/10))*100)
+10270             At(Index,Atten/10)=At(Index,0)-Corrected
+10271          END IF
+10272       CASE 10,20,40,50,60,70
+10273          Corrected=INT((Measured+Atten_cal((70-Atten)/10))*100)
+10274          At(Index,Atten/10)=At(Index,0)-Corrected
+10275       CASE 80,90
+10276          Corrected=INT((Measured+Atten_cal((90-Atten)/10))*100)
+10277          At(Index,Atten/10)=At(Index,11)-Corrected
+10278       CASE 100
+10279          Corrected=INT((Measured+Atten_cal(0))*100)
+10280          At(Index,Atten/10)=At(Index,11)-Corrected-1000
+10281       END SELECT
+10282       Index=Index+1
+10283       Freq=Freq+F_inc
+10284    UNTIL Freq>Stpf+.0000001
+10285 !
+10286    Clr_scr
+10287 !
+10288 SUBEND
+10289 !
+10290 !
+10291 At_cal_parms:SUB At_cal_parms(Rev$,Opt$,Startf,Stopf,Initf,If_freq,Att_pts)
+10292 !
+10293 !---------------------------------
+10294 !   At_cal TEST PARAMETERS
+10295 !---------------------------------
+10296 !
+10297    SELECT Rev$
+10298    CASE ELSE
+10299       Startf=1    ! GHz
+10300       IF FNDut_has("BAND 4",Opt$) THEN 
+10301          Stopf=26.5! GHz
+10302       ELSE
+10303          Stopf=20
+10304       END IF
+10305       Initf=4     ! GHz initialization freq
+10306       If_freq=.00103 ! GHz
+10307       Att_pts=150! maximum is 200
+10308    END SELECT
+10309 !
+10310 SUBEND
+10311 !
+10312 !
+10313 !
+10314 At_setup:SUB At_setup(Test_mode$)
+10315    GINIT
+10316    GRAPHICS ON
+10317    VIEWPORT 0,130,0,95
+10318    WINDOW 0,135,0,100
+10319    Box(34,82,29,10)
+10320    Box(86,82,29,10)
+10321    Box(72,64,16,6)
+10322    Box(73,46,22,10)
+10323    Box(98,46,22,10)
+10324    Box(23,35,32,16)
+10325    Box(15,36,10,8)
+10326    Box(52,52,3,7)
+10327    Label("** ATTENUATOR TEST SET UP **",63.75,97.25,6.5,.6,0)
+10328    Label("LocalOscillator",34.5,84.25,4,.6,0)
+10329    Label("DUT",86.25,82.25,5,.6,0)
+10330    Label("RF OUT",89.25,74.25,3,.6,0)
+10331    Label("RF OUT",33.5,74.25,3,.6,0)
+10332    Label("X",52,63.5,7.75,.85,0)
+10333    Label("LO",43.5,61.25,3.3,.6,0)
+10334    Label("RF",60.25,65.7,3.3,.6,0)
+10335    Label("IF",56,56.75,3.3,.6,0)
+10336    Label("Mixer",52.5,71.25,3.8,.6,0)
+10337    Label("HP3585A",30,39.5,3.8,.6,0)
+10338    Label("Spectrum Analyzer",23.5,46,4,.6,0)
+10339    Label("50 ohmInput",46,35.3,3.3,.6,0)
+10340    Label("LOW PASSFILTER",72.75,47.75,3.5,.6,0)
+10341    Label("HP 8447F",89.75,36.25,4.25,.6,0)
+10342    Label("10 dB",43.25,50.75,3.75,.6,0)
+10343    Label("20 dB",71.75,63.75,4.25,.6,0)
+10344    Label("semi-rigid ",118.5,74.5,4,.6,0)
+10345    Connect(40.5,76.25,47,64,0)
+10346    Connect(97,76.5,80.5,64,0)
+10347    Connect(64,63.75,56.5,63.75,0)
+10348    Connect(52.25,57.75,52,55.5,0)
+10349    Connect(52.25,46,62,46,0)
+10350    Connect(84,46,86.75,46,0)
+10351    Connect(109.5,46.25,113.5,46,0)
+10352    Connect(113.25,46,99,29.6,0)
+10353    Connect(90.1,29.6,85.2,29.6,0)
+10354    Connect(76,29.6,37.5,29.6,0)
+10355    ! Connect(75,28.25,20.5,21.25,0)
+10356    Connect(52.25,48.5,52.25,46,0)
+10357    Connect(104.25,72.75,98.25,67.25,1)
+10358    Circle(51.75,63.5,5,0,0)
+10359    Circle(36.5,29.75,.75,0,0)
+10360    Circle(34,29.75,-.75,0,0)
+10361    Amp(98.666666667,33.5,-3.66666666667)
+10362    Amp(85,33.5,-3.66666666667)
+10363    SELECT Test_mode$
+10364    CASE "FSP","FSC"
+10365       Label("HP 355DREF ATTEN",98.25,47.75,3.5,.6,0)
+10366       Label("Pre-AmpInput",106.3,31.5,3.5,.55,0)
+10367       Label("Power AmpOutput",67,35,3.3,.6,0)
+10368    CASE ELSE
+10369       Box(88,39,56,29)
+10370       Box(119,62,23,10)
+10371       Label("MixerIF",54,44,3.3,.6,0)
+10372       Label("33321GREF ATTN",98.25,47.75,4,.6,0)
+10373       Label("ET-16841",99.5,20.75,5,.6,0)
+10374       Label("50 ohmOutput",67,31.3,3,.6,0)
+10375       Label("11713AAttn Drv",119,64,4,.6,0)
+10376       Connect(124,57,116.5,36.25,0)
+10377       Connect(125.75,56.5,116.5,34.75,0)
+10378    END SELECT
+10379 SUBEND
+10380 SUB At_cal_specs(Test_mode$,Opt$,INTEGER Step,REAL Start(*),Stop(*),Flat_spec(*),Acc_spec(*))
+10381 !
+10382 At_cal_specs:!*****************************************************
+10383 !******************************************************************
+10384 !         STORE SPECIFICATIONS FOR LOW POWER ACCURACY
+10385 !******************************************************************
+10386 !******************************************************************
+10387 !
+10388    INTEGER Rear,Item_num,Spec_num
+10389    DIM Cust_flat(20),Slp_chg(20),Hdwr_chg(20),Meas_uncert(20)
+10390 !
+10391 !...figure out 8340 options
+10392    Rear=FNDut_has("REAR OUT",Opt$)
+10393 !
+10394 !********************************************
+10395 ! FREQUENCY BANDS for power specs ------
+10396 !
+10397    RESTORE Spec_bands
+10398    FOR I=1 TO 3
+10399       READ Start(I),Stop(I)
+10400    NEXT I
+10401 !             [  start <=  BAND  < stop  ]
+10402 !-----------------------------------------------------
+10403 !                band A     band B      band C
+10404 Spec_bands:DATA .01,2.4  ,  2.4,20  ,  20,26.500000001
+10405 !*****************************************************
+10406 !
+10407 !*****************************************************
+10408 !   decide which group of attenuator steps to use
+10409 !
+10410    SELECT Step
+10411    CASE 10
+10412       Group=1
+10413    CASE 20,30,40
+10414       Group=2
+10415    CASE 50,60,70
+10416       Group=3
+10417    CASE 80,90,100
+10418       Group=4
+10419    CASE 0,110
+10420       SUBEXIT!...REFERENCE TRACES
+10421    CASE ELSE
+10422       DISP "ATTENUATOR STEP OF "&VAL$(Step)&" IS IMPOSSIBLE !!!"
+10423       BEEP 
+10424       Wait_for_cont
+10425       SUBEXIT
+10426    END SELECT
+10427 !
+10428 !*****************************************************
+10429 !...RESTORE proper table of data
+10430    IF Rear THEN RESTORE Spec_normal
+10431    IF NOT Rear THEN RESTORE Spec_rear
+10432 !
+10433 !
+10434 !********************************************
+10435 !   READ TABLE OF SPEC PARAMETERS
+10436 !********************************************
+10437 Read_em:!
+10438    FOR Item_num=1 TO 4
+10439       FOR I=1 TO 12
+10440          SELECT Item_num
+10441          CASE 1
+10442             READ Cust_flat(I)
+10443          CASE 2
+10444             READ Slp_chg(I)
+10445          CASE 3
+10446             READ Hdwr_chg(I)
+10447          CASE 4
+10448             READ Meas_uncert(I)
+10449          END SELECT
+10450       NEXT I
+10451    NEXT Item_num
+10452 !
+10453 !***********************************************
+10454 !    CALCULATE SPECS FOR THIS MODE
+10455 !***********************************************
+10456    FOR Spec_num=1 TO 3
+10457       I=INT(Spec_num+(Group-1)*3)
+10458       SELECT Test_mode$
+10459       CASE "FSC","FSP" !....CUSTOMER/FIELD SERVICE
+10460          Flat_spec(Spec_num)=Cust_flat(I)
+10461          Acc_spec(Spec_num)=Flat_spec(Spec_num)+.4
+10462 !
+10463       CASE "T00" TO "T99"!.....HEAT TESTING
+10464          Flat_spec(Spec_num)=Cust_flat(I)-Meas_uncert(I)
+10465          Acc_spec(Spec_num)=Flat_spec(Spec_num)+.4
+10466 !
+10467       CASE "EI_"!.......EI
+10468          Flat_spec(Spec_num)=Cust_flat(I)-Meas_uncert(I)-Hdwr_chg(I)-Slp_chg(I)/2
+10469          Acc_spec(Spec_num)=Flat_spec(Spec_num)+.4
+10470 !
+10471       CASE ELSE!....CAL/FINAL SPECS
+10472          Flat_spec(Spec_num)=Cust_flat(I)-Meas_uncert(I)-Hdwr_chg(I)-Slp_chg(I)/2
+10473          Acc_spec(Spec_num)=Flat_spec(Spec_num)+.4
+10474 !
+10475       END SELECT
+10476    NEXT Spec_num
+10477 !
+10478    SUBEXIT
+10479 !
+10480 !
+10481 !
+10482 Spec_normal:!  ************ STANDARD UNIT ********************************
+10483 !        10 dB STEP   |   20,30,40 dB   |   50,60,70 dB   |    80,90 dB
+10484 !       a    b     c  |  a     b     c  |  a     b     c  |  a     b     c
+10485 !---------------------|-----------------|-----------------|----------------
+10486 !
+10487 !  DEFINITION OF ROWS OF DATA :
+10488 !       #1 :  CUSTOMER MANUAL FLATNESS SPECS (TABLE 1-1) [dB]
+10489 !       #2 :  Slope changes with temperature and power  [dB]
+10490 !       #3 :  Hardware flatness changes with temperature  [dB]
+10491 !       #4 :  Total measurement system uncertainty  [dB]
+10492 !
+10493 !---------------------|-----------------|-----------------|----------------
+10494    DATA  .8 , 1.6 , 2.1 , 1.1 , 1.9 , 2.4 , 1.4 , 2.2 , 2.7 , 1.7 , 2.5 , 3.0
+10495    DATA .12 , .13 , .16 , .12 , .13 , .16 , .12 , .13 , .16 , .12 , .13 , .16
+10496    DATA   0 , .13 , .16 ,  0  , .13 , .16 ,  0  , .13 , .16 ,  0  , .13 , .16
+10497    DATA .29 , .63 , .75 , .31 , .65 , .77 , .34 , .68 , .80 , .34 , .68 , .80
+10498 !
+10499 !
+10500 Spec_rear:! ************** REAR PANEL RF OUTPUT OPTION *****************
+10501 !        10 dB STEP   |   20,30,40 dB   |   50,60,70 dB   |    80,90 dB
+10502 !       a    b     c  |  a     b     c  |  a     b     c  |  a     b     c
+10503 !---------------------|-----------------|-----------------|----------------
+10504    DATA  .9 , 1.8 , 2.3 , 1.2 , 2.1 , 2.6 , 1.5 , 2.4 , 2.9 , 1.8 , 2.7 , 3.2
+10505    DATA .12 , .22 , .26 , .12 , .22 , .26 , .12 , .22 , .26 , .12 , .22 , .26
+10506    DATA   0 , .13 , .16 ,  0  , .13 , .16 ,  0  , .13 , .16 ,  0  , .13 , .16
+10507    DATA .29 , .63 , .75 , .31 , .65 , .77 , .34 , .68 , .80 , .34 , .68 , .80
+10508 !
+10509 !
+10510 SUBEND
+10511 !<><><><><><><><><><><><><><><><><><><><><><
+10512 !><><><><><><><><><><><><><><><><><><><><><>
+10513 !<><><><><><><><><><><><><><><><><><><><><><
+10514 SUB At_cal_out(Model$,Ser_no$,Test_mode$,Data$,Error$,OPTIONAL INTEGER P_f,Raw,Attn$,Rev$,Option$,INTEGER Atdata(*))
+10515 At_cal_out:! Label for easy editing
+10516 ! *****************************************
+10517 !  Definition of optional pass paramters:
+10518 !
+10519 !   P_f : Pass or Fail flag for data [output]
+10520 !   Raw : if 1 then raw step data will be printed [input]
+10521 !  Attn$: contains steps to view "10,20,30" etc. or
+10522 !         "ALL", or "REF00_" or "REF30_" [input]
+10523 !  Rev$ : Test revision code
+10524 !Option$: Option ID $ of dut
+10525 !Atdata(*) : Attenuator data
+10526 ! *****************************************
+10527 !         LOW POWER OUTPUT ACCURACY
+10528 !
+10529 !          data handling routine
+10530 !
+10531 !      part of # :  08340-90068
+10532 !
+10533 ! *****************************************
+10534 !
+10535    OPTION BASE 1
+10536 !
+10537 ! *****************************************
+10538 !      I N I T I A L I Z A T I O N
+10539 ! *****************************************
+10540 !
+10541    COM /Peripherals/ INTEGER Print,Kbd,Crt
+10542    COM /User_data/ Am_cal(*),Atten_cal(*),Pwr_sensor(*),Alc_pwr(*),Alc_error(*)
+10543    DIM Start(10),Stop(10),Flat_spec(10),Acc_spec(10),Data_rev$[50],Power(10)
+10544    DIM Raw_data_sts$[10],Atten_steps$[50],Opt$[2],Power_data(0:201,0:11)
+10545    DIM Step_data(0:500),Disc_rev$[50],Pwr_rev$[50]
+10546    INTEGER Error_code,Acc_fail,Flat_fail,Step,Raw_flag,Got_pwracc
+10547    INTEGER Data_passed,Menu_enable,Spec_needed,Raw_invert,Last_step
+10548    INTEGER Num_of_pwrs,File_found,Plot_num
+10549    Error$=""
+10550    Data_dest$=Data$
+10551 !
+10552    Num_of_pwrs=1
+10553    Alc_power(1)=0
+10554    Alc_power(2)=-10
+10555 !
+10556    Plot_num=0
+10557 !
+10558    SELECT NPAR!...Decide what to do
+10559    CASE 5!....no optional parameters
+10560       Atten_steps$="ALL,"
+10561       Raw_flag=0
+10562       IF Data_dest$="DISPLAY" THEN 
+10563          Menu_enable=1!...enable menu for soft-copy
+10564       ELSE
+10565          Menu_enable=0
+10566       END IF
+10567       Data_passed=0
+10568       Spec_needed=0
+10569 !
+10570    CASE 8!....use passed print options
+10571       Atten_steps$=Attn$
+10572       Raw_flag=Raw
+10573       Menu_enable=0
+10574       Data_passed=0
+10575       Spec_needed=1
+10576 !
+10577    CASE 11!....passed data present
+10578       Atten_steps$=Attn$
+10579       Raw_flag=Raw
+10580       Menu_enable=0
+10581       Data_passed=1
+10582       Spec_needed=1
+10583 !
+10584    CASE ELSE
+10585       DISP "IMPROPER # OF PASS PARAMETERS TO At_cal_out"
+10586       BEEP 
+10587       Error$="?"
+10588       SUBEXIT
+10589    END SELECT
+10590 !
+10591 !
+10592 !**********************************************************
+10593 Store_data:!***********************************************
+10594 !**********************************************************
+10595    IF Data_dest$="STORE" THEN 
+10596       IF NOT (Data_passed) THEN 
+10597          BEEP 
+10598          DISP "NO DATA PASSED TO STORE !!!!"
+10599          WAIT 1
+10600          Error$="?"
+10601          SUBEXIT
+10602       END IF
+10603       DISP "       **** STORING ATTENUATOR DATA ****"
+10604       Prep_data_file(@Data,Model$,Test_mode$,"At_cal",Ser_no$,20)
+10605       OUTPUT @Data;FNData_tag$(Rev$[1,1]),Option$,Atdata(*)
+10606       ASSIGN @Data TO *
+10607       DISP 
+10608       SUBEXIT
+10609    END IF
+10610 !
+10611 !*******************************************************
+10612 !**** GET ATTENUATOR DATA FROM DISC or PASSED PARMS ****
+10613 !*******************************************************
+10614    IF NOT (Data_passed) OR Data_dest$="LOAD" THEN 
+10615       DISP "LOADING At_cal DATA........"
+10616       Find_data(@Data,Model$,Test_mode$,"At_cal",Ser_no$,File_found)
+10617       IF File_found THEN 
+10618          ENTER @Data;Disc_rev$,Disc_opt$
+10619          SELECT Disc_rev$[1,1]
+10620          CASE "a","b","c","d","e","f","A"
+10621          CASE ELSE !.......cannot handle this revision of data
+10622             Error$=Disc_rev$[1,1]
+10623             SUBEXIT
+10624          END SELECT
+10625          Decode_revision(Disc_rev$[1,1],Last_step,Raw_invert)
+10626          ALLOCATE INTEGER At_data(0:201,0:Last_step)
+10627          ENTER @Data;At_data(*)
+10628          ASSIGN @Data TO *
+10629          DISP 
+10630       ELSE !..............no file found
+10631          Error$="?"
+10632          SUBEXIT
+10633       END IF
+10634    END IF
+10635 !
+10636 !
+10637    SELECT Data_dest$
+10638    CASE "DISPLAY","PRINT"
+10639       IF Data_passed THEN !..transfer data from passed format to output format
+10640          Clr_scr
+10641          DISP "FORMATTING DATA FOR OUTPUT..."
+10642          Decode_revision(Rev$[1,1],Last_step,Raw_invert)
+10643          FOR I=0 TO 201
+10644             FOR J=0 TO Last_step
+10645                SELECT I
+10646                CASE 0
+10647                   Power_data(I,J)=Atdata(I,J)/1000
+10648                CASE 1
+10649                   Power_data(I,J)=Atdata(I,J)/10000
+10650                CASE ELSE
+10651                   Power_data(I,J)=Atdata(I,J)/100
+10652                END SELECT
+10653             NEXT J
+10654          NEXT I
+10655          Data_rev$=FNData_tag$(Rev$[1,1])
+10656          Opt$=Option$
+10657          DISP 
+10658       ELSE!....transfer data from disc format to output format
+10659          Clr_scr
+10660          DISP "FORMATTING DATA FOR OUTPUT..."
+10661          FOR I=0 TO 201
+10662             FOR J=0 TO Last_step
+10663                SELECT I
+10664                CASE 0
+10665                   SELECT Disc_rev$[1,1]
+10666                   CASE "a","b","c"
+10667                      Power_data(I,J)=At_data(I,J)/10000
+10668                   CASE ELSE
+10669                      Power_data(I,J)=At_data(I,J)/1000
+10670                   END SELECT
+10671                CASE 1
+10672                   Power_data(I,J)=At_data(I,J)/10000
+10673                CASE ELSE
+10674                   Power_data(I,J)=At_data(I,J)/100
+10675                END SELECT
+10676             NEXT J
+10677          NEXT I
+10678          Data_rev$=Disc_rev$
+10679          Opt$=Disc_opt$
+10680          DISP 
+10681       END IF
+10682 !
+10683 !
+10684    CASE "LOAD"!....transfer data from disc format to passed format
+10685       DISP "RETRIEVING STORED DATA...."
+10686       FOR I=0 TO 201
+10687          FOR J=0 TO Last_step
+10688             SELECT I
+10689             CASE 0
+10690                SELECT Disc_rev$[1,1]
+10691                CASE "a","b","c"
+10692                   Atdata(I,J)=At_data(I,J)/10
+10693                CASE ELSE
+10694                   Atdata(I,J)=At_data(I,J)
+10695                END SELECT
+10696             CASE ELSE
+10697                Atdata(I,J)=At_data(I,J)
+10698             END SELECT
+10699          NEXT J
+10700       NEXT I
+10701       Rev$=Disc_rev$
+10702       Option$=Disc_opt$
+10703       DISP 
+10704       SUBEXIT
+10705    END SELECT
+10706 !
+10707 !***********************************************
+10708 !*****  USE DEFAULT MENU PARAMETERS ? **********
+10709 !***********************************************
+10710 Def_selections:!
+10711    IF Menu_enable THEN 
+10712       Atten_steps$="ALL,"
+10713       Raw_flag=0
+10714    ELSE
+10715       GOTO Look_at_data
+10716    END IF
+10717 !
+10718 !
+10719 Output_menu:!
+10720 !
+10721 !*************************************************
+10722 !*****  INPUT OPERATOR SELECTIONS FOR OUTPUT  ****
+10723 !*************************************************
+10724    IF Menu_enable THEN 
+10725       Clr_scr
+10726       GCLEAR
+10727       OFF KEY 
+10728       ON KEY 1 LABEL "FORMAT" GOSUB Format_chg
+10729       ON KEY 3 LABEL "RAWDATA" GOSUB Raw_data_chg
+10730       ON KEY 5 LABEL "STEPS" GOTO Steps_chg
+10731       ON KEY 7 LABEL "DO IT" GOTO Do_it
+10732       ON KEY 9 LABEL "DONE" GOSUB Finished
+10733       IF Raw_flag THEN 
+10734          Raw_data_sts$="ON "
+10735       ELSE
+10736          Raw_data_sts$="OFF"
+10737       END IF
+10738       PRINT "================================================"
+10739       PRINT "     LOW POWER OUTPUT ACCURACY DATA SELECTION"
+10740       PRINT "================================================"
+10741       PRINT 
+10742       PRINT "  OUTPUT DATA TO      :"
+10743       PRINT 
+10744       PRINT "  PRINT RAW STEP DATA :"
+10745       PRINT 
+10746       PRINT "  ATTENUATOR STEPS    :"
+10747       SELECT Test_mode$
+10748       CASE "FSP","FSC"
+10749       !
+10750       CASE ELSE
+10751          Hi_lite(5,24,32)
+10752          Hi_lite(7,24,28)
+10753          Hi_lite(9,24,46)
+10754       END SELECT
+10755       LOOP
+10756          DISP "*** select print parameters with soft keys ***"
+10757          PRINT TABXY(25,5);Data_dest$&"    "
+10758          PRINT TABXY(25,7);Raw_data_sts$
+10759          PRINT TABXY(25,9);Atten_steps$
+10760       END LOOP
+10761 !
+10762 Format_chg:!
+10763       IF Data_dest$="PRINT" THEN 
+10764          Data_dest$="DISPLAY"
+10765       ELSE
+10766          Data_dest$="PRINT"
+10767       END IF
+10768       BEEP 400,.1
+10769       RETURN 
+10770 !
+10771 Raw_data_chg:!
+10772       IF Raw_flag=0 THEN 
+10773          Raw_flag=1
+10774          Raw_data_sts$="ON "
+10775       ELSE
+10776          Raw_flag=0
+10777          Raw_data_sts$="OFF"
+10778       END IF
+10779       BEEP 400,.1
+10780       RETURN 
+10781 !
+10782 Steps_chg:   !
+10783       DISP "INPUT STEPS [ie '10,20,50'] or 'ALL' :";
+10784       LINPUT Atten_steps$
+10785       IF POS(Atten_steps$,"0")=0 THEN Atten_steps$="ALL"
+10786       IF Atten_steps$[LEN(Atten_steps$)-1]<>"," THEN Atten_steps$=Atten_steps$&","
+10787       BEEP 400,.1
+10788       GOTO Output_menu
+10789 !
+10790 Finished:!
+10791       SUBEXIT
+10792    END IF
+10793 !
+10794 Do_it:!
+10795    Clr_scr
+10796 !
+10797 Look_at_data:!===================================================
+10798    OFF KEY 
+10799    GRAPHICS OFF
+10800    IF NOT ((Raw_flag EXOR Raw_invert) OR Got_pwracc) THEN 
+10801       IF Alc_error(0,1)<>VAL(Ser_no$) THEN 
+10802          DISP "LOADING Pwracc DATA......."
+10803          Get_pwr_data(Model$,Ser_no$,Test_mode$,Pwr_rev$,Opt$,Error_code)
+10804          IF Error_code=1 THEN 
+10805             BEEP 
+10806             DISP "No power accuracy data found !!"
+10807             WAIT 2
+10808             Error$="?"
+10809             SUBEXIT
+10810          END IF
+10811          DISP "PROCESSING Pwracc DATA......."
+10812          FOR I=1 TO 2
+10813             Power_level=Alc_power(I)
+10814             J=1
+10815             FOR J=1 TO 201
+10816           !.....0 db step data will always be present
+10817                Freq=Power_data(0,0)+(J-1)*Power_data(1,0)
+10818                Pwr_data(Power_level,Freq,Prog_pwr,Meas_error,Error_code)
+10819                Alc_error(J,I)=Meas_error
+10820                IF J=1 THEN Alc_pwr(I)=Prog_pwr
+10821             NEXT J
+10822          NEXT I
+10823          Got_pwracc=1
+10824          Alc_error(0,1)=VAL(Ser_no$)
+10825          DISP 
+10826       END IF
+10827       IF Alc_pwr(1)<>Alc_pwr(2) THEN Num_of_pwrs=2
+10828    END IF
+10829 !
+10830 !************************************************
+10831 !**********  PRINT OUT DATA  ********************
+10832 !************************************************
+10833 Print_out:!
+10834    OFF KEY 
+10835    IF Data_dest$="CRT" OR Data_dest$="DISPLAY" THEN 
+10836       PRINTER IS Crt
+10837    ELSE
+10838       PRINTER IS Print
+10839    END IF
+10840    ON KEY 9 LABEL "ABORT" GOTO Done
+10841    ON KEY 5 LABEL "Next" GOTO Next_plot
+10842    FOR Step=0 TO 110 STEP 10
+10843       SELECT Step
+10844       CASE 0
+10845          Stp$="REF00_"
+10846       CASE 110
+10847          Stp$="REF30_"
+10848       CASE 100
+10849          Stp$="?"
+10850       CASE ELSE
+10851          Stp$=VAL$(Step)&","
+10852       END SELECT
+10853       IF POS(Atten_steps$,Stp$) OR POS(Atten_steps$,"ALL") THEN 
+10854          FOR Alc_ptr=1 TO Num_of_pwrs
+10855             FOR I=0 TO 201
+10856                Step_data(I)=Power_data(I,Step/10)
+10857                IF I>1.5 THEN !...Add power accuracy to atten data
+10858                   IF NOT (Raw_flag EXOR Raw_invert) AND Step<>0 AND Step<>110 THEN 
+10859                      Step_data(I)=Alc_error(I-1,Alc_ptr)-Step_data(I)
+10860                   END IF
+10861                END IF
+10862             NEXT I
+10863             Pwr_plot(Test_mode$,Ser_no$,Opt$,Data_rev$,Alc_pwr(Alc_ptr),Step_data(*),Step,Raw_flag,Acc_fail,Flat_fail)
+10864             IF Spec_needed THEN 
+10865                IF Acc_fail OR Flat_fail THEN P_f=-1
+10866             END IF
+10867             IF Data_dest$="DISPLAY" OR Data_dest$="CRT" THEN 
+10868                BEEP 400,.1
+10869                LOOP
+10870                END LOOP
+10871             END IF
+10872             IF Data_dest$="PRINT" THEN 
+10873                OFF KEY 
+10874                IF Print<>1 THEN DUMP GRAPHICS
+10875                Clr_scr
+10876                IF Stp$="REF00_" OR Stp$="REF30_" THEN Plot_num=1
+10877                ON KEY 9 LABEL "ABORT" GOTO Done
+10878             END IF
+10879 Next_plot: !
+10880             Plot_num=Plot_num+1
+10881             IF Data_dest$="PRINT" THEN 
+10882                IF Plot_num>1 AND (Plot_num/2)=INT(Plot_num/2) THEN CALL Top_of_page
+10883             END IF
+10884             IF Raw_flag OR Step=0 OR Step=110 THEN Alc_ptr=10
+10885          NEXT Alc_ptr
+10886       END IF
+10887    NEXT Step
+10888    OFF KEY 
+10889    IF Spec_needed THEN 
+10890       IF P_f=0 THEN P_f=1
+10891    END IF
+10892 !
+10893 Done:GRAPHICS OFF
+10894    PRINTER IS Crt
+10895    ALPHA ON
+10896    IF Menu_enable THEN Output_menu
+10897    SUBEXIT
+10898 !
+10899 SUBEND
+10900 !
+10901 Pwr_plot:!
+10902 SUB Pwr_plot(Test_mode$,Ser_no$,Opt$,Rev$,Alc_power,Step_power(*),INTEGER Step,Raw,Acc_fail,Flat_fail)
+10903    DIM Start(10),Stop(10),Flat_spec(10),Acc_spec(10),Ref_pwr(10)
+10904    DIM Max_flat(10),Min_flat(10)
+10905    INTEGER Ref_trace
+10906    IF Step_power(0)=0 THEN SUBEXIT
+10907    IF Step=0 OR Step=110 THEN Ref_trace=1
+10908    Acc_fail=-1
+10909    Flat_fail=-1
+10910    Startf=Step_power(0)
+10911    IF FNDut_has("BAND 4",Opt$) THEN 
+10912       Stopf=26.5
+10913    ELSE
+10914       Stopf=20
+10915    END IF
+10916    First_freq=Step_power(0)
+10917    At_cal_specs(Test_mode$,Opt$,Step,Start(*),Stop(*),Flat_spec(*),Acc_spec(*))
+10918    IF Ref_trace THEN 
+10919       Y2=Step_power(2)+5
+10920       Y1=Step_power(2)-5
+10921       Y_tic=1
+10922    ELSE
+10923       Y2=Power_level+.5*(INT(Acc_spec(3)/.5)+2)
+10924       Y1=Power_level-.5*(INT(Acc_spec(3)/.5)+2)
+10925       Y_tic=.5
+10926    END IF
+10927    Setup_plot(Startf,Stopf,Y1,Y2,Y_tic)
+10928    CLIP Startf,Stopf,Y1,Y2
+10929    LINE TYPE 1
+10930    First_flag=0
+10931 !
+10932 !
+10933 !.........graph data, find maximum and minimum flatness points
+10934    FOR I=1 TO 3
+10935       Min_flat(I)=999
+10936       Max_flat(I)=-999
+10937    NEXT I
+10938    I=1
+10939    LOOP
+10940       Freq=Step_power(0)+(I-1)*Step_power(1)
+10941    EXIT IF Freq>Stopf+.0000001
+10942       Pwr=Step_power(I+1)
+10943       IF Pwr>-100 THEN 
+10944          FOR X=1 TO 3
+10945             IF Freq>=Start(X) AND Freq<=Stop(X) THEN 
+10946                IF Pwr>Max_flat(X) THEN Max_flat(X)=Pwr
+10947                IF Pwr<Min_flat(X) THEN Min_flat(X)=Pwr
+10948             END IF
+10949          NEXT X
+10950          IF Freq+.0001>=Startf AND Freq-.0001<=Stopf THEN 
+10951             IF NOT First_flag THEN 
+10952                MOVE Freq,Pwr
+10953                First_flag=1
+10954             ELSE
+10955                DRAW Freq,Pwr
+10956             END IF
+10957          END IF
+10958       END IF
+10959       I=I+1
+10960    END LOOP
+10961 !
+10962    IF NOT (Ref_trace) THEN 
+10963       IF Min_flat(3)>900 THEN 
+10964          Min_flat(3)=Min_flat(2)
+10965          Max_flat(3)=Max_flat(2)
+10966       END IF
+10967 !
+10968 !...calculate flatness lines
+10969       FOR X=1 TO 3
+10970          SELECT X
+10971          CASE 1
+10972             Ref_pwr(X)=(Max_flat(X)+Min_flat(X))/2
+10973          CASE 2,3
+10974             IF Flat_spec(2)-Max_flat(2)>Flat_spec(3)-Max_flat(3) THEN 
+10975                Upper_space=Flat_spec(3)-Max_flat(3)
+10976             ELSE
+10977                Upper_space=Flat_spec(2)-Max_flat(2)
+10978             END IF
+10979             IF Min_flat(2)+Flat_spec(2)>Min_flat(3)+Flat_spec(3) THEN 
+10980                Lower_space=Min_flat(3)+Flat_spec(3)
+10981             ELSE
+10982                Lower_space=Min_flat(2)+Flat_spec(2)
+10983             END IF
+10984             Ref_pwr(X)=Lower_space/2-Upper_space/2
+10985          END SELECT
+10986       NEXT X
+10987 !....... draw spec lines
+10988       FOR X=1 TO 3
+10989          LINE TYPE 1
+10990          MOVE Start(X),Acc_spec(X)
+10991          DRAW Stop(X),Acc_spec(X)
+10992          MOVE Start(X),-Acc_spec(X)
+10993          DRAW Stop(X),-Acc_spec(X)
+10994          LINE TYPE 4,15
+10995          MOVE Start(X),Flat_spec(X)+Ref_pwr(X)
+10996          DRAW Stop(X),Flat_spec(X)+Ref_pwr(X)
+10997          MOVE Start(X),-Flat_spec(X)+Ref_pwr(X)
+10998          DRAW Stop(X),-Flat_spec(X)+Ref_pwr(X)
+10999       NEXT X
+11000 !
+11001 ! ....... spec the data
+11002       I=1
+11003       LOOP
+11004          Pwr=Step_power(I+1)
+11005          Freq=Step_power(0)+Step_power(1)*(I-1)
+11006       EXIT IF Freq>Stopf+.000001
+11007          IF Freq+.000001>=Startf AND Freq-.000001<=Stopf AND Pwr>-100 THEN 
+11008             FOR X=1 TO 3
+11009                IF Freq+.0001>=Start(X) AND Freq-.0001<=Stop(X) THEN 
+11010                   IF ABS(Pwr-Power_level)>Acc_spec(X) THEN Acc_fail=1
+11011                   IF ABS(Pwr-Ref_pwr(X))>Flat_spec(X) THEN Flat_fail=1
+11012                END IF
+11013             NEXT X
+11014          END IF
+11015          I=I+1
+11016       END LOOP
+11017    END IF
+11018    IF Acc_fail=-1 THEN Acc_fail=0
+11019    IF Flat_fail=-1 THEN Flat_fail=0
+11020 !
+11021 !
+11022 !
+11023 Label_graph:!*******************************************************
+11024    LINE TYPE 1
+11025    CLIP OFF
+11026    CSIZE 5
+11027    VIEWPORT 0,19,84,95
+11028    WINDOW 0,100,0,100
+11029    MOVE 50,20
+11030    IF Step=110 THEN 
+11031       LABEL "30 dB"
+11032    ELSE
+11033       LABEL VAL$(Step)&" dB"
+11034    END IF
+11035    FRAME
+11036    CSIZE 3
+11037    MOVE 50,80
+11038    LABEL "ATTENUATOR"
+11039    LABEL "STEP:"
+11040    VIEWPORT 20,130,86,95
+11041    LORG 6
+11042    WINDOW 0,100,0,100
+11043    CSIZE 5,.4
+11044    MOVE 50,100
+11045    SELECT Step
+11046    CASE 0
+11047       LABEL "0 dB REFERENCE TRACE"
+11048    CASE 110
+11049       LABEL "30 dB REFERENCE TRACE"
+11050    CASE ELSE
+11051       SELECT Test_mode$
+11052       CASE "CF_","FSC","FSP"
+11053          IF Raw THEN 
+11054             LABEL "LOW POWER ACCURACY: RAW STEP DATA  S/N "&Ser_no$
+11055          ELSE
+11056             LABEL "LOW POWER ACCURACY:  ALC = "&VAL$(Alc_power)&"dBm    S/N "&Ser_no$
+11057          END IF
+11058       CASE "EI_"
+11059          IF Raw THEN 
+11060             LABEL "EI LOW POWER ACCY: RAW STEP DATA   S/N "&Ser_no$
+11061          ELSE
+11062             LABEL "EI LOW POWER ACCY:  ALC = "&VAL$(Alc_power)&"dBm    S/N "&Ser_no$
+11063          END IF
+11064       CASE "T00" TO "T99"
+11065          Temp$=Test_mode$[2]
+11066          IF Raw THEN 
+11067             LABEL "POWER ACCY @ "&Temp$&"deg  RAW STEP DATA   S/N "&Ser_no$
+11068          ELSE
+11069             LABEL "POWER ACCY @ "&Temp$&"deg  ALC = "&VAL$(Alc_power)&"dBm  S/N "&Ser_no$
+11070          END IF
+11071       END SELECT
+11072    END SELECT
+11073    CSIZE 4
+11074    MOVE 50,25
+11075    LORG 5
+11076    LABEL "revision : "&Rev$
+11077    IF Ref_trace THEN SUBEXIT
+11078    VIEWPORT 20,130,80,86
+11079    WINDOW 0,100,0,100
+11080    FRAME
+11081    CSIZE 3
+11082    LORG 2
+11083    MOVE 5,50
+11084    LABEL "ACCURACY : "
+11085    MOVE 55,50
+11086    LABEL "FLATNESS : "
+11087    CSIZE 4
+11088    MOVE 35,50
+11089    IF Acc_fail THEN 
+11090       Acc_result$="FAILED"
+11091    ELSE
+11092       Acc_result$="PASSED"
+11093    END IF
+11094    IF Flat_fail THEN 
+11095       Flat_result$="FAILED"
+11096    ELSE
+11097       Flat_result$="PASSED"
+11098    END IF
+11099    LABEL Acc_result$
+11100    MOVE 85,50
+11101    LABEL Flat_result$
+11102    LINE TYPE 1
+11103    MOVE 50,0
+11104    DRAW 50,100
+11105    MOVE 23,50
+11106    DRAW 32,50
+11107    LINE TYPE 4,15
+11108    MOVE 73,50
+11109    DRAW 82,50
+11110 SUBEND
+11111 Setup_plot:SUB Setup_plot(X1,X2,Y1,Y2,Y_tic)
+11112 ! *****************************************
+11113 !       sets up graph on 9826 CRT
+11114 ! *****************************************
+11115 !
+11116    DEG
+11117    GINIT
+11118    GRAPHICS ON
+11119    ALPHA OFF
+11120    PEN 1
+11121    VIEWPORT 20,130,20,80
+11122    WINDOW X1,X2,Y1,Y2
+11123    Y_mid=(Y2+Y1)/2
+11124    X_mid=(X2+X1)/2
+11125    AXES 0,0,X1,Y1
+11126    AXES 0,0,X2,Y2
+11127    CLIP OFF
+11128    LINE TYPE 1
+11129 !
+11130 !------------------------------------
+11131 !  Y AXIS LABELING
+11132 !------------------------------------
+11133    Y_pos=0
+11134    LORG 8
+11135    CSIZE 4
+11136    LOOP
+11137       Top_lbl=Y_mid+Y_pos*Y_tic
+11138       Bot_lbl=Y_mid-Y_pos*Y_tic
+11139    EXIT IF Top_lbl>Y2 OR Bot_lbl<Y1
+11140       MOVE X1,Top_lbl
+11141       LABEL USING "SDD.D";Top_lbl
+11142       MOVE X1,Bot_lbl
+11143       LABEL USING "SDD.D";Bot_lbl
+11144       Y_pos=Y_pos+2
+11145    END LOOP
+11146    LDIR 90
+11147    LORG 6
+11148    MOVE X1-(X2-X1)/6,(Y2+Y1)/2
+11149    CSIZE 5
+11150    LABEL "Error [dB]"
+11151 !
+11152 !------------------------------------------
+11153 !           LABEL X AXIS
+11154 !------------------------------------------
+11155    LDIR 0
+11156    Width=X2-X1
+11157    Ten_pwr=INT((LGT(Width)))
+11158    Mantissa=Width/(10^Ten_pwr)
+11159    Tic_spacing=1
+11160    IF Mantissa<5 THEN Tic_spacing=.5
+11161    IF Mantissa<3 THEN Tic_spacing=.2
+11162    Tic_spacing=Tic_spacing*10^Ten_pwr
+11163    Tic_origin=Tic_spacing*INT(X1/Tic_spacing)
+11164    Tic_format$="K"
+11165    CLIP ON
+11166    LINE TYPE 3
+11167    GRID Tic_spacing,Y_tic,Tic_origin+Tic_spacing,Y_mid
+11168    LINE TYPE 1
+11169 !
+11170 !
+11171 !--------------------------------------
+11172 ! START  X AXIS TICKING AND LABELING
+11173 !--------------------------------------
+11174 !
+11175    Labelflag=1
+11176    Tic=Tic_origin
+11177    LORG 6
+11178    CSIZE 4
+11179    CLIP OFF
+11180    REPEAT
+11181       MOVE Tic,Y1
+11182       IF Tic>=X1 THEN 
+11183          SELECT Labelflag
+11184 Yes:     CASE =1
+11185             MOVE Tic,Y1
+11186             LABEL USING Tic_format$;Tic
+11187             Labelflag=0
+11188 No:      CASE =0
+11189             Labelflag=1
+11190          END SELECT
+11191       END IF
+11192       Tic=Tic+Tic_spacing
+11193    UNTIL Tic>=X2
+11194    MOVE (X2+X1)/2,Y1-(Y2-Y1)/9
+11195    LORG 5
+11196    CSIZE 5
+11197    LABEL "Freq [GHz]"
+11198 !------------------------------------------
+11199 SUBEND
+11200 !
+11201 !
+11202 !*******************************************
+11203 !*******************************************
+11204 Hi_lite:SUB Hi_lite(Line_no,Beg_col,End_col)
+11205    IF RATIO*100<132 THEN 
+11206       VIEWPORT 4,127.5,27,96.5
+11207       WINDOW 1,81,19,1
+11208    ELSE
+11209       VIEWPORT 0,133,28,96.5
+11210       WINDOW 1,51,19,2
+11211    END IF
+11212    GRAPHICS ON
+11213    LINE TYPE 1
+11214    PEN 1
+11215    CLIP Beg_col,End_col+1,Line_no+.8,Line_no+.1
+11216    Midx=(End_col+Beg_col)/2
+11217    Midy=(Line_no)
+11218    GRID .1,.05,Midx,Midy,1,1
+11219 SUBEND
+11220 !
+11221 !
+11222 !
+11223 Decode_revision:!
+11224 SUB Decode_revision(Rev$,INTEGER Last_step,Raw_invert)
+11225    SELECT Rev$[1,1]
+11226 !
+11227    CASE "a","b","c"
+11228       Last_step=7
+11229       Raw_invert=1
+11230    CASE "d","e"
+11231       Last_step=11
+11232       Raw_invert=1
+11233    CASE "f","A"
+11234       Last_step=11
+11235       Raw_invert=0
+11236    CASE ELSE
+11237       DISP "REVISION CODE NOT HOOKED UP IN 'Decode_revision'"
+11238       BEEP 
+11239       Wait_for_cont
+11240    END SELECT
+11241 SUBEND

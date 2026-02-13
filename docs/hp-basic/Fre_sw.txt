@@ -1,0 +1,592 @@
+9000  DEF FNTest_file$
+9001     RETURN "Fre_sw"
+9002  FNEND
+9003  !
+9004  !**************************************************
+9005  !*                                                *
+9006  !*  Copyright (C) Hewlett-Packard Co. 1982,1987   *
+9007  !*                                                *
+9008  !**************************************************
+9009  !
+9010  ! ************************************************************** !
+9011  !
+
+
+
+
+9012  SUB Fre_sw(Model$,Ser$,Opt$,Jan_mode$,Test_mode$,INTEGER Results,Depend)
+9013 Fre_sw: !
+9014  !----------------------------------------------------------------!
+9015  !   F R E Q U E N C Y   S W I T C H I N G
+9016  !
+9017  !             T I M E   T E S T
+9018  !
+9019  !      part no. :  08340-90065
+9020  !
+9021  !
+9022  !
+9023  !                 5/24/82
+9024  !----------------------------------------------------------------!
+9025     Rev$="A  12.16.86"!  current revision   DG
+9026  !----------------------------------------------------------------!
+9027  !   6/18/82  spec change
+9028  !   7/19/82  spec re-change for guardband
+9029  !   9/20/82  correction factor chg from
+9030  !            .00165 to .00200 seconds    JT
+9031  !  10/22/82  changed trigger threshold from
+9032  !            0.5v to 0.7v (with 50 ohm) JT
+9033  !  11/04/82  changed trigger threshold from
+9034  !            0.7v to 0.8v (with 50 ohm) JT
+9035  !  12/15/82  switched to using NEG BLANKING
+9036  !            on rear panel instead of
+9037  !            Z AXIS, trigger at -2 v. Update
+9038  !            to rev. d      JT
+9039  !   1/25/83  chg'ed test spec to include
+9040  !            2X the margin,update to rev. e
+9041  !   3/20/84  fixed bugs in Hard_copy flag. MS
+9042  !   4/24/84  changed to new interface, update
+9043  !            to rev.A  CA
+9044  !   6/29/84  changed frequency limits from hard
+9045  !            code to variables. setup varaibles
+9046  !            with 'FNDut_has(' ',Opt$)'.   CA
+9047  !   7/24/84  Fixed bug in ^ 2000--->20000, 2650--->26500   MS
+9048  !  11/15/85  Deleted hard copy option. kh
+9049  !  03/05/86  Re-enabled hard copy option for field service only. DG
+9050  !  04/11/86  Fixed bug in Enter_lower and Low_delta.  DG
+9051  !  05/15/86  Modified softkeys for Series 300 compatibility.  Reduced
+9052  !            minimum allowable switching time for field to .025 ms (used
+9053  !            Minimum_time).  Production still set for .030 ms. DG
+9054  !  10/22/86  Added call to Instr_present for field.  DG
+9055  !  11/18/86  Set test spec to customer spec for field.  DG
+9056  !  12/16/86  Modified setup instructions to reflect way test is run.
+9057  !            Changed order of commands to counter in go_test (put
+9058  !            RE at end of command sequence to clear the counter prior
+9059  !            to the measurement.  DG
+9060  !----------------------------------------------------------------!
+9061     COM /Hpib_codes/ @Dut,@D2,@D3,@D4,@D5,@D6,@D7,@D8,@L_o,@D10
+9062     COM /Hpib_codes/ @D11,@Cntr,@D13,@D14,@D15,@D16
+9063  !----------------------------------------------------------------!
+9064     DIM Dat_array(1:20),Low_array(1:20),High_array(1:20)
+9065  !----------------------------------------------------------------!
+9066     DIM Tag$[30],Data_dest$[14],Rev_error$[2],Pass_fail$[1]
+9067  !----------------------------------------------------------------!
+9068  !  INTEGER FLAGS
+9069     INTEGER Data_valid,Fail
+9070  !----------------------------------------------------------------!
+9071  !  INTEGER VARIABLES
+9072     INTEGER Beep,I,J,Num_of_points
+9073  !----------------------------------------------------------------!
+9074  !  FREQUENCY IN Hz
+9075     REAL Delta_freq,Higher_freq,Lower_freq
+9076  !----------------------------------------------------------------!
+9077  !  FREQUENCY IN MHz
+9078     REAL High_frequency,Low_frequency,Start_limit,Stop_limit
+9079  !----------------------------------------------------------------!
+9080  !  TIME IN Seconds
+9081     REAL Cust_spec,Margin,Max_so_far,Spec,Time,Minimum_time
+9082  !----------------------------------------------------------------!
+9083     Margin=.00030    !   seconds
+9084     Cust_spec=.050   !   seconds
+9085  !
+9086     SELECT Test_mode$
+9087     CASE "FSP","FSC"
+9088        Spec=Cust_spec
+9089     CASE ELSE
+9090        Spec=Cust_spec-2*Margin
+9091     END SELECT
+9092  !----------------------------------------------------------------!
+9093  !  SETUP DUT FREQUENCY LIMITS  (Mhz)
+9094     !
+9095     Start_limit=10
+9096     !
+9097     IF FNDut_has("BAND 4",Opt$) THEN 
+9098        Stop_limit=26500
+9099     ELSE
+9100        Stop_limit=20000
+9101     END IF
+9102  !----------------------------------------------------------------!
+9103     OFF TIMEOUT 
+9104     OFF KEY 
+9105     Clr_scr
+9106     PRINT "       FREQUENCY SWITCHING TIME TEST SET-UP"
+9107     PRINT "**************************************************"
+9108     PRINT "1. Connect CH.A of the HP 5316A counter to the"
+9109     PRINT "   DUT's NEG BLANK BNC (rear panel)."
+9110     PRINT 
+9111     PRINT "2. Select Period A (PER A button IN and Blue Shift"
+9112     PRINT "   button IN).  Set the 'GATE TIME' pot to 'MIN'."
+9113     PRINT 
+9114     PRINT "3. Set these buttons to the following positions:"
+9115     PRINT "   - OUT -  a. TRIGGER LEVEL/SENS ( CH.A )"
+9116     PRINT "   - OUT -  b. ATTN X1/X20   ( CH.A )"
+9117     PRINT "   - OUT -  c. FILTER NORM/100 kHz"
+9118     PRINT "   - OUT -  d. SEP/COM A"
+9119     PRINT "   -  IN -  e. AC/DC         ( CH.A )"
+9120     PRINT 
+9121     PRINT "4. Set Channel A for falling edge triggering and"
+9122     PRINT "   set its TRIGGER LEVEL/SENS knob to the nine"
+9123     PRINT "   o'clock position."
+9124     DISP "      Press CarryOn when ready."
+9125     ON KEY 5 LABEL "CarryOn" GOTO Fre_sw_menu
+9126     ON KEY 9 LABEL "JANITOR" GOTO Subexit
+9127     !
+9128     BEEP 400,.05
+9129     BEEP 600,.05
+9130     BEEP 800,.05
+9131     !
+9132     LOOP
+9133     END LOOP
+9134     !
+9135  !----------------------------------------------------------------!
+9136 Fre_sw_menu: !
+9137     OFF KEY 
+9138     Clr_scr
+9139     Data_valid=1
+9140     PRINT 
+9141     PRINT "**************************************************"
+9142     PRINT "            FREQUENCY SWITCHING TIME"
+9143     PRINT "                  Rev. ";Rev$
+9144     PRINT "**************************************************"
+9145     PRINT 
+9146     PRINT 
+9147     PRINT 
+9148     PRINT "     FOR FULL TEST PRESS ""FullTest"" SOFTKEY"
+9149     PRINT 
+9150     PRINT "              (Data will be stored)"
+9151     PRINT 
+9152     PRINT 
+9153     PRINT "                   >>>>||<<<<"
+9154     PRINT 
+9155     PRINT 
+9156     PRINT "FOR TESTING AT OTHER POINTS PRESS ""Other"" SOFTKEY"
+9157     PRINT 
+9158     PRINT "            (Data will not be stored)"
+9159     !
+9160     ON KEY 5 LABEL "FullTst" GOTO Full_test
+9161     ON KEY 7 LABEL " Other" GOTO Partial_test
+9162     ON KEY 9 LABEL "JANITOR" GOTO Subexit
+9163     !
+9164     BEEP 700,.05
+9165     BEEP 500,.05
+9166     !
+9167     LOOP
+9168     END LOOP
+9169     !
+9170  !----------------------------------------------------------------!
+9171  !
+9172 Check_instr:  !
+9173     Instr_present(@Dut,"Device Under Test")
+9174     Instr_present(@Cntr,"Universal Counter")
+9175     RETURN 
+9176  !
+9177 Full_test: !
+9178     OFF KEY 
+9179     Clr_scr
+9180     SELECT Test_mode$
+9181     CASE "FSC","FSV","FSP"
+9182        GOSUB Check_instr
+9183        IF FNYes("DO YOU WANT A HARD COPY OF THE TEST DATA ???") THEN 
+9184           Data_dest$="PRINT"
+9185        ELSE
+9186           Data_dest$="DISPLAY"
+9187        END IF
+9188     CASE ELSE
+9189        Data_dest$="DISPLAY"
+9190     END SELECT
+9191     !
+9192  !----------------------------------------------------------------!
+9193  !     L O A D   T E S T   P O I N T S   I N   A R R A Y S
+9194  !----------------------------------------------------------------!
+9195 Config_test: !
+9196     DATA  5  !NUM_OF_POINTS
+9197  !
+9198  !        LOW FREQ , HI FREQ
+9199  !       ---------- ----------
+9200     DATA 2300000000,6999000000
+9201     DATA 2300000000,2309000000
+9202     DATA 2490000000,2500000000
+9203     DATA 2290000000,2300000000
+9204     DATA 6990000000,7000000000
+9205  !----------------------------------------------------------------!
+9206     RESTORE Config_test
+9207     READ Num_of_points
+9208     FOR I=1 TO Num_of_points
+9209        READ Low_array(I),High_array(I)
+9210     NEXT I
+9211     !
+9212  !----------------------------------------------------------------!
+9213  !     T A K E   M E A S U R E M E N T S
+9214  !----------------------------------------------------------------!
+9215     ON KEY 9 LABEL "ABORT" GOTO Fre_sw_menu
+9216     OUTPUT @Dut;"IP PL0DB"
+9217     OUTPUT @Cntr;"IN"
+9218     !
+9219     Fail=0
+9220     FOR J=1 TO Num_of_points
+9221        Lower_freq=Low_array(J)
+9222        Delta_freq=High_array(J)-Low_array(J)
+9223        GOSUB Go_test
+9224        IF Max_so_far>Spec THEN 
+9225           Dat_array(J)=-Max_so_far
+9226           Fail=1
+9227        ELSE
+9228           Dat_array(J)=Max_so_far
+9229        END IF
+9230     NEXT J
+9231     !
+9232     OUTPUT @Dut;"IP PL0DB"
+9233     OFF KEY 
+9234     !
+9235  !----------------------------------------------------------------!
+9236  !     S T O R E   T H E   T E S T   D A T A
+9237  !----------------------------------------------------------------!
+9238     IF Data_valid THEN 
+9239        DISP " ...storing data "
+9240        BEEP 700,.1
+9241        Tag$=Rev$[1,1]&FNDate_time$
+9242        OFF ERROR 
+9243        Prep_data_file(@Disc,Model$,Test_mode$,"Fre_sw",Ser$,1)
+9244        OUTPUT @Disc;Tag$,Opt$,Dat_array(*)
+9245        ASSIGN @Disc TO *
+9246        IF Fail=1 THEN 
+9247           CALL Fail_count(Results)
+9248           FOR Beep=1 TO 10
+9249              BEEP 320,.05
+9250              BEEP 240,.05
+9251           NEXT Beep
+9252        ELSE
+9253           CALL Pass_count(Results)
+9254        END IF
+9255        DISP 
+9256     END IF
+9257  !----------------------------------------------------------------!
+9258  !     O U T P U T   T H E   T E S T   D A T A
+9259  !----------------------------------------------------------------!
+9260     CALL Fre_sw_out(Model$,Ser$,Test_mode$,Data_dest$,Rev_error$,Tag$,Dat_array(*))
+9261     OFF KEY 
+9262     ON KEY 5 LABEL "Re-Test" GOTO Fre_sw_menu
+9263     ON KEY 9 LABEL "JANITOR" GOTO Subexit
+9264     !
+9265     LOOP
+9266     END LOOP
+9267     !
+9268  !----------------------------------------------------------------!
+9269  !     P A R T I A L   T E S T   S E L E C T I O N
+9270  !----------------------------------------------------------------!
+9271 Partial_test: !
+9272     OFF KEY 
+9273     IF Test_mode$="FSP" OR Test_mode$="FSC" THEN GOSUB Check_instr
+9274     Clr_scr
+9275     PRINT "**************************************************"
+9276     PRINT " FREQUENCY SWITCHING TIME : ARBITRARY FREQUENCIES"
+9277     PRINT "    (no data will be stored)   SPEC=";Spec*1000;"msec"
+9278     PRINT "**************************************************"
+9279     PRINT 
+9280     PRINT 
+9281     PRINT "          FREQUENCIES (MHz)           ||SWITCHING"
+9282     PRINT "   LOWER    |   HIGHER   |   DELTA    ||TIME(msec)"
+9283     PRINT "------------|------------|------------||----------"
+9284     !
+9285  !----------------------------------------------------------------!
+9286 Soft_keys: !
+9287  !----------------------------------------------------------------!
+9288     LOOP
+9289        ON KEY 5 LABEL " A to B" GOTO Low_high
+9290        ON KEY 6 LABEL "AtoA+d" GOTO Low_delta
+9291        ON KEY 8 LABEL "FullTst" GOTO Full_test
+9292        ON KEY 9 LABEL "JANITOR" GOTO Subexit
+9293        DISP "TO ENTER LOWER/HIGHER FREQUENCIES, PRESS ""A to B"""
+9294        WAIT 3
+9295        DISP 
+9296        WAIT .2
+9297        DISP "TO ENTER LOWER/DELTA FREQUENCIES, PRESS ""A to A+d"""
+9298        WAIT 3
+9299        DISP 
+9300        WAIT .2
+9301     END LOOP
+9302  !----------------------------------------------------------------!
+9303 Low_high: !____LOW AND HIGH FREQ TEST____
+9304  !----------------------------------------------------------------!
+9305     OFF KEY 
+9306     GOSUB Enter_lower
+9307     !
+9308     High_frequency=0
+9309     INPUT "ENTER HIGHER FREQUENCY IN MHz:",High_frequency
+9310     !
+9311     SELECT High_frequency
+9312     CASE <Low_frequency
+9313        High_frequency=Low_frequency
+9314     CASE >Stop_limit
+9315        High_frequency=Stop_limit
+9316     END SELECT
+9317     !
+9318     Lower_freq=Low_frequency*1.E+6
+9319     Higher_freq=High_frequency*1.E+6
+9320     Delta_freq=Higher_freq-Lower_freq
+9321     !
+9322  !----------------------------------------------------------------!
+9323 Do_test: !
+9324  !----------------------------------------------------------------!
+9325     OUTPUT @Dut;"IP PL0DB"
+9326     OUTPUT @Cntr;"IN"
+9327     GOSUB Go_test
+9328     OUTPUT @Dut;"IP PL0DB"
+9329     BEEP 
+9330     !
+9331     GOSUB Print_line
+9332     GOTO Soft_keys
+9333     !
+9334  !----------------------------------------------------------------!
+9335 Enter_lower: !
+9336  !----------------------------------------------------------------!
+9337     Lower_freq=0
+9338     INPUT "ENTER LOWER FREQUENCY IN MHz:",Low_frequency
+9339     SELECT Low_frequency
+9340     CASE <Start_limit
+9341        Low_frequency=Start_limit
+9342     CASE >Stop_limit
+9343        Low_frequency=Stop_limit
+9344     END SELECT
+9345     RETURN 
+9346     !
+9347  !----------------------------------------------------------------!
+9348 Low_delta: !___LOW AND INCREMENT FREQ TEST____
+9349  !----------------------------------------------------------------!
+9350     OFF KEY 
+9351     !
+9352     GOSUB Enter_lower
+9353     !
+9354     Delta_freq=0
+9355     INPUT "ENTER FREQUENCY CHANGE IN MHZ",Delta_freq
+9356     !
+9357     SELECT Delta_freq
+9358     CASE <0
+9359        Delta_freq=0
+9360     CASE >Stop_limit-Low_frequency
+9361        Delta_freq=Stop_limit-Low_frequency
+9362     END SELECT
+9363     !
+9364     Lower_freq=Low_frequency*1.E+6
+9365     Delta_freq=Delta_freq*1.E+6
+9366     Higher_freq=Lower_freq+Delta_freq
+9367     !
+9368     GOTO Do_test
+9369     !
+9370  !----------------------------------------------------------------!
+9371  !     P R I N T   O N E   L I N E   O F   D A T A
+9372  !----------------------------------------------------------------!
+9373 Print_line: !
+9374     IF Max_so_far<0 THEN 
+9375        Pass_fail$="*"
+9376     ELSE
+9377        Pass_fail$=" "
+9378     END IF
+9379     PRINT USING A_;Lower_freq/1.E+6,"|",Higher_freq/1.E+6,"|",Delta_freq/1.E+6,"||",Pass_fail$
+9380 A_: IMAGE 5D.6D,A,5D.6D,A,5D.6D,2A,A,#
+9381     PRINT USING "3D.D,X,A";ABS(Max_so_far*1000),Pass_fail$
+9382     RETURN 
+9383     !
+9384  !----------------------------------------------------------------!
+9385 Go_test: !  T E S T   A T   A   S I N G L E   P O I N T
+9386  !----------------------------------------------------------------!
+9387     OUTPUT @Dut;"SHCF";Delta_freq;"HZ CW";Lower_freq;"HZ"
+9388     OUTPUT @Cntr;"INFN7AS1TR1AT-2WA1GA0RE"
+9389     Max_so_far=0
+9390     DISP "Taking measurements.";
+9391     FOR I=1 TO 20
+9392        OUTPUT @Cntr;"WA1"
+9393        OUTPUT @Dut;"UP"
+9394        OUTPUT @Dut;"DN"
+9395        OUTPUT @Dut;"UP"
+9396        OUTPUT @Dut;"DN"
+9397        ENTER @Cntr;Time
+9398 !      PRINT Time,Max_so_far
+9399        IF Time>Max_so_far THEN Max_so_far=Time
+9400        DISP ".";
+9401     NEXT I
+9402     DISP 
+9403     !
+9404     Max_so_far=Max_so_far-.00200
+9405     DISP 
+9406     SELECT Test_mode$
+9407     CASE "FSA","FSC","FSP","FSV"
+9408        Minimum_time=.025
+9409     CASE ELSE
+9410        Minimum_time=.030
+9411     END SELECT
+9412     IF Max_so_far<Minimum_time THEN 
+9413        FOR I=1 TO 10
+9414           DISP "      ** DATA NOT VALID -- CHECK SET UP **"
+9415           BEEP 700,.1
+9416           WAIT .1
+9417        NEXT I
+9418        Data_valid=0
+9419        !
+9420        ON KEY 5 LABEL "CarryOn" GOTO Fre_sw_menu
+9421        !
+9422        LOOP
+9423        END LOOP
+9424     END IF
+9425     RETURN 
+9426     !
+9427 Subexit:Clr_scr
+9428  SUBEND
+9429  !
+9430  ! ************************************************************** !
+9431  !
+9432  SUB Fre_sw_out(Model$,Ser$,Test_mode$,Data_dest$,Error_rev$,OPTIONAL Data_rev$,Dat_array(*))
+9433 Fre_sw_out: !
+9434  !----------------------------------------------------------------!
+9435  !          FREQUENCY SWITCHING
+9436  !              TIME OUTPUT
+9437  !              SUBPROGRAM
+9438  !
+9439  !              DAVE IRVINE
+9440  !                5/24/82
+9441  !
+9442  !         1.25.83  rev. A
+9443  !
+9444  !----------------------------------------------------------------!
+9445     COM /Peripherals/ INTEGER Print,Kbd,Crt
+9446  !----------------------------------------------------------------!
+9447     DIM Comment$(1:20)[45],Data_array(1:20)
+9448     DIM Tag$[30],Opt$[2],Pass_fail$[1]
+9449  !----------------------------------------------------------------!
+9450  !  INTEGER FLAGS
+9451     INTEGER Fail,File_found
+9452  !----------------------------------------------------------------!
+9453  !  INTEGER VARIABLES
+9454     INTEGER I,Num_of_points
+9455  !----------------------------------------------------------------!
+9456  !  TIME IN Seconds.
+9457     REAL Cust_spec,Margin,Spec
+9458  !----------------------------------------------------------------!
+9459     Margin=.00030    !   seconds
+9460     Cust_spec=.050   !   seconds
+9461     SELECT Test_mode$
+9462     CASE "FSP","FSC"
+9463        Spec=Cust_spec
+9464     CASE ELSE
+9465        Spec=Cust_spec-2*Margin
+9466     END SELECT
+9467  !----------------------------------------------------------------!
+9468     IF NPAR=5 THEN 
+9469        GOSUB Load_from_disc
+9470     ELSE
+9471        GOSUB Load_from_param
+9472     END IF
+9473     !
+9474     IF Data_dest$="PRINT" THEN 
+9475        PRINTER IS Print
+9476        Top_of_page
+9477        GOSUB Print_heading
+9478        GOSUB Print_data
+9479        PRINTER IS Crt
+9480     ELSE
+9481        PRINTER IS Crt
+9482        Clr_scr
+9483        GOSUB Print_heading
+9484        GOSUB Print_data
+9485        Wait_for_cont
+9486     END IF
+9487     !
+9488     SUBEXIT
+9489     !
+9490  !----------------------------------------------------------------!
+9491 Load_from_disc: !   __GET DATA FROM DISC__
+9492  !----------------------------------------------------------------!
+9493     Find_data(@Disc,Model$,Test_mode$,"Fre_sw",Ser$,File_found)
+9494     IF File_found THEN 
+9495        ENTER @Disc;Tag$
+9496        OFF ERROR 
+9497        GOSUB Select_rev
+9498        ENTER @Disc;Opt$,Data_array(*)
+9499        RETURN 
+9500     ELSE
+9501        IF ERRN=56 THEN !--no data on disc--!
+9502           Error_rev$="?"
+9503           SUBEXIT
+9504        END IF
+9505        PRINT "ERROR # ";ERRN
+9506        ON KEY 9 LABEL "EXIT" GOTO Subexit
+9507        LOOP
+9508        END LOOP
+9509     END IF
+9510     !
+9511  !----------------------------------------------------------------!
+9512 Load_from_param: !  __GET DATA FROM TEST__
+9513  !----------------------------------------------------------------!
+9514     FOR I=1 TO 20
+9515        Data_array(I)=Dat_array(I)
+9516     NEXT I
+9517     Tag$=Data_rev$
+9518     GOSUB Select_rev
+9519     RETURN 
+9520     !
+9521  !----------------------------------------------------------------!
+9522 Select_rev: !  ___SELECT REVISION OF DATA___
+9523  !----------------------------------------------------------------!
+9524 Data_rev_1: !
+9525     DATA 5     !  NUM_OF_POINTS
+9526     !
+9527     DATA "Worst case, all loops   2.300 TO 6.999   "
+9528     DATA "   20/30 loop only      2.300 to 2.309   "
+9529     DATA "   M/N loop mostly      2.490 to 2.500   "
+9530     DATA "  Bandcross(0 to 1)     2.290 to 2.300   "
+9531     DATA "  Bandcross(1 to 2)     6.990 to 7.000   "
+9532  !----------------------------------------------------------------!
+9533     SELECT Tag$[1,1]
+9534     CASE "1","2","3","a","b","c","d","e","A"
+9535        RESTORE Data_rev_1
+9536     CASE ELSE
+9537        Error_rev$=Tag$[1,1]
+9538        SUBEXIT
+9539     END SELECT
+9540     !
+9541     READ Num_of_points
+9542     FOR I=1 TO Num_of_points
+9543        READ Comment$(I)
+9544     NEXT I
+9545     !
+9546     RETURN 
+9547     !
+9548  !----------------------------------------------------------------!
+9549 Print_heading: !
+9550  !----------------------------------------------------------------!
+9551     PRINT "*************************************************"
+9552     PRINT "  FREQUENCY SWITCHING TIME   REV.";Tag$[1,1];"   SERIAL#";Ser$
+9553     PRINT "    date/time data taken :";Tag$[2,30]
+9554     PRINT "*************************************************"
+9555     PRINT 
+9556     RETURN 
+9557     !
+9558  !----------------------------------------------------------------!
+9559 Print_data: !
+9560  !----------------------------------------------------------------!
+9561     PRINT "     MEASUREMENT          FREQUENCIES       TIME "
+9562     PRINT "     DESCRIPTION             (GHz)         (msec)"
+9563     PRINT 
+9564     Fail=0
+9565     FOR I=1 TO Num_of_points
+9566        IF Data_array(I)<0 THEN 
+9567           Pass_fail$="*"
+9568           Fail=1
+9569        ELSE
+9570           Pass_fail$=" "
+9571        END IF
+9572        PRINT USING "41A,A,3D.2D,X,A";Comment$(I),Pass_fail$,ABS(Data_array(I)*1000),Pass_fail$
+9573     NEXT I
+9574     PRINT USING "2/"
+9575     IF Fail=0 THEN 
+9576        PRINT "       INSTRUMENT PASSED     SPEC=";Spec*1000;"msec"
+9577     ELSE
+9578        PRINT "       INSTRUMENT FAILED     SPEC=";Spec*1000;"msec"
+9579     END IF
+9580     RETURN 
+9581     !
+9582  !----------------------------------------------------------------!
+9583 Subexit: !
+9584  SUBEND
+9585  !
+9586  ! ************************************************************** !
+9587  !

@@ -1,0 +1,911 @@
+9000  DEF FNTest_file$
+9001     RETURN "Cw_acc"
+9002  FNEND
+9003  !
+9004  !**************************************************
+9005  !*                                                *
+9006  !*  Copyright (C) Hewlett-Packard Co. 1982,1987   *
+9007  !*                                                *
+9008  !**************************************************
+9009  !
+9010 Cw_acc:SUB Cw_acc(Model$,Ser$,Opt$,Jan_mode$,Test_mode$,INTEGER Status_flag,Depend)
+9011    ! ########################################
+9012    !     M/N LOOP & 20/30 LOOP DIVIDER TEST
+9013    !
+9014    ! 08/08/86               DG
+9015    !
+9016    ! ########################################
+9017    ! Revision Log :
+9018    !  06/06/84  MANAGERIZED    ms
+9019    !  10/03/84  Added INT command to calculation of Error.  Also changed
+9020    !            N1_out and N2_out to allow printout of all digits of
+9021    !            error.  DG
+9022    !  10/03/84  Modified error calculation.   DG
+9023    !  02/25/86  Added endpoint accuracy test and eliminated need to
+9024    !            press continue if tests pass.    DG
+9025    !  05/01/86  Modified endpoint accuracy to test 2300 MHz point and
+9026    !            incorporated data statements and test loop to streamline
+9027    !            program.  DG
+9028    !  05/21/86  Modified endpoint_accy to call FNDut_has to determine if
+9029    !            DUT has Band 4.  DG
+9030    !  08/08/86  Added H19 data and modified to reflect abort.   DG
+9031    !  10/21/86  Added call to Instr_present.  DG
+9032    !  11/19/86  Modified 'Print' key to toggle between Display/Printer
+9033    !            output.  DG
+9034    !  12/18/86  Modified setup for Series 300 compatibility.  DG
+9035    !
+9036    ! ########################################
+9037     Rev$="A   12.18.86"
+9038    ! ########################################
+9039    !
+9040     OPTION BASE 0
+9041     COM /Hpib_codes/ @Dut,@D2,@D3,@Cntr,@D5,@D6,@D7,@D8,@D9,@D10,@D11,@D12,@D13,@D14,@D15,@D16
+9042    !
+9043     COM /Peripherals/ INTEGER Print,Kbd,Crt
+9044    !
+9045     INTEGER M,N,N1_loop,N2_loop,Internal,External
+9046     INTEGER Mn_loop,M_div,N_div,Low_freq_loop,Test_all,Abort
+9047     INTEGER N2_1k,N2_10k,N2_100k,N2_1m
+9048     INTEGER N1_10k,N1_100k,N1_1m
+9049     INTEGER End_acc,I,Hard
+9050    !
+9051     DIM End_points(1:4)
+9052     DIM End_specs(1:4)
+9053     Hard=0
+9054    !
+9055 Abort:    !
+9056     Status_flag=0
+9057     Abort=1
+9058 Keys: !________________________________________
+9059     PRINTER IS Crt
+9060     ALPHA ON
+9061     OFF TIMEOUT 
+9062     Test_all=0
+9063     CALL Clr_scr
+9064     PRINT "**************************************************"
+9065     PRINT "    C W   F R E Q U E N C Y   A C C U R A C Y"
+9066     PRINT "**************************************************"
+9067     PRINT "Select a softkey:"
+9068     PRINT 
+9069     PRINT "       Setup: Display the test equipment setup."
+9070     PRINT "         M/N: Test the M/N phase lock loop only."
+9071     PRINT "       20/30: Test the 20/30 phase lock loop only."
+9072     PRINT " Endpnt Accy: Test the DUT's frequency endpoints."
+9073     PRINT "         All: Perform all of the above tests."
+9074     PRINT "       Print: Changes the test data destination."
+9075     PRINT "        DONE: Return to the Test Menu."
+9076     PRINT "**************************************************"
+9077     PRINT "No test data is stored for the above tests! If you"
+9078     PRINT "need a permanent copy of the test results, press"
+9079     PRINT "'Print' to change the test data destination to the"
+9080     PRINT "system printer."
+9081     IF Hard=0 THEN 
+9082        DISP "The test data destination is the computer's CRT."
+9083     ELSE
+9084        DISP "The test data destination is the system printer."
+9085     END IF
+9086     OFF KEY 
+9087 Keys_:     !
+9088     ON KEY 0 LABEL " Setup  " GOTO Setup
+9089     ON KEY 1 LABEL "   M/N  " GOTO M_n_loop
+9090     ON KEY 2 LABEL " 20/30  " GOTO Loop_20_30
+9091     ON KEY 3 LABEL "Endpnt Accy " GOTO Endpoint_accy
+9092     ON KEY 4 LABEL "   ALL  " GOTO Test_all
+9093     ON KEY 7 LABEL " Print  " GOTO Print
+9094     ON KEY 9 LABEL "  DONE  " GOTO Done
+9095    !
+9096     FOR I=1 TO 5
+9097        BEEP I*500,.1
+9098     NEXT I
+9099     LOOP
+9100     END LOOP
+9101    !
+9102 Check_instr:    !
+9103     Instr_present(@Dut,"Device Under Test")
+9104     Instr_present(@Cntr,"Frequency Counter")
+9105     Is_ref_locked("DUT",Junk)
+9106     RETURN 
+9107    !
+9108 Setup:     ! ________________________________
+9109    !
+9110     Clr_scr
+9111     OFF KEY 
+9112     ALPHA OFF
+9113     GRAPHICS ON
+9114     ON KEY 5 LABEL "DONE" GOTO Keys
+9115     CALL Cw_acc_setup
+9116    !
+9117     FOR I=1 TO 3
+9118        BEEP 1000*I,.1
+9119     NEXT I
+9120     LOOP
+9121     END LOOP
+9122    !
+9123 Print:    !___________________________________
+9124    !
+9125     IF Hard=0 THEN 
+9126        Hard=1
+9127        DISP "The test data destination is the system printer."
+9128     ELSE
+9129        Hard=0
+9130        DISP "The test data destination is the computer's CRT."
+9131     END IF
+9132     FOR I=1 TO 5
+9133        BEEP 500*I,.1
+9134     NEXT I
+9135 Wait_for_key:GOTO Wait_for_key
+9136    !
+9137 Test_all: !____________________________________
+9138     OFF KEY 
+9139     Clr_scr
+9140     Test_all=1
+9141     Abort=0
+9142     IF Hard=1 THEN 
+9143        PRINTER IS Print
+9144        Top_of_page
+9145     ELSE
+9146        PRINTER IS Crt
+9147        PRINT 
+9148        PRINT "**************************************************"
+9149        PRINT 
+9150        PRINT "         NO DATA IS STORED FOR THIS TEST!"
+9151        PRINT 
+9152        PRINT "        SELECT YES IF YOU WISH A PERMANENT"
+9153        PRINT "           RECORD OF THE TEST RESULTS!!"
+9154        PRINT 
+9155        PRINT "**************************************************"
+9156        Hard=FNYes("Do you want a hard copy of the test data?")
+9157        IF Hard=1 THEN 
+9158           PRINTER IS Print
+9159           Top_of_page
+9160        END IF
+9161     END IF
+9162    !
+9163 M_n_loop: !____________________________________
+9164    !
+9165     OFF KEY 
+9166     GOSUB Check_instr
+9167    !
+9168     ON KEY 9 LABEL "ABORT" GOTO Abort
+9169     CALL Clr_scr
+9170    !
+9171     DISP "INITIALIZING TEST EQUIPMENT"
+9172     OUTPUT @Dut;"IP PL0DB"
+9173     OUTPUT @Cntr;"R H AU SR3 T3"
+9174    !
+9175     Mn_loop=1
+9176    !
+9177 M_divider:     ! _____________________________________________
+9178    !
+9179    ! M Divider Tests
+9180    !
+9181     M_div=1
+9182     CALL Clr_scr
+9183     IF Hard=1 AND Test_all=0 THEN 
+9184        PRINTER IS Print
+9185        Top_of_page
+9186     END IF
+9187     OUTPUT @Dut;"CW 2490 MZ  SHCF 10 MZ SHM1 CW"
+9188     PRINT "    *****************************************"
+9189     PRINT "    *      M/N LOOP 'M' Divider Tests       *"
+9190     PRINT "    *****************************************"
+9191     PRINT "               M/N OUTPUT    "&Model$&" RF     ERROR"
+9192     PRINT "  M    N       FREQ (MHz)   FREQ (MHz)     (Hz)"
+9193     PRINT " ---  ---      ----------   ----------    -----"
+9194     N=13
+9195     M=8
+9196 Mn_out:IMAGE 1X,2D,3X,2D,7X,3D.6D,7X,4D,8X,K
+9197 Mn_out_2:IMAGE 1X,2D,3X,2D,7X,3D.6D,7X,4D,5X,K
+9198     FOR F=2490 TO 2300 STEP -10
+9199        OUTPUT @Cntr;"H AU"
+9200        Mn_freq=200-10*(M/N)
+9201        Mn_freq=DROUND(Mn_freq,9)
+9202        TRIGGER @Cntr
+9203        ENTER @Cntr;Cntr_freq
+9204        Error=INT(ABS(F*1.E+6-Cntr_freq))
+9205        Cntr_freq=Cntr_freq/1.E+6
+9206        OUTPUT @Dut;"SHM1 OD"
+9207        ENTER @Dut;M,N,R,L
+9208        R=R/1.E+6
+9209        IF Error<10 THEN 
+9210           PRINT USING Mn_out;M,N,R,F,Error
+9211        ELSE
+9212           PRINT USING Mn_out_2;M,N,R,F,Error
+9213        END IF
+9214        IF ABS(R-Mn_freq)>1 THEN 
+9215           PRINT "      Calculated M/N output = ";Mn_freq
+9216           PRINT Model$&" programmed M/N output = ";R
+9217        END IF
+9218        M=M+1
+9219        IF F>2300 THEN OUTPUT @Dut;"DN"
+9220        IF Error>2 THEN M_div=0
+9221     NEXT F
+9222     IF M_div THEN 
+9223        PRINT "<<<<<<<<<<<<<'M'  Divider Test PASSED>>>>>>>>>>>>>"
+9224        WAIT 3
+9225        GOTO M_done
+9226     ELSE
+9227        PRINT "<<<<<<<<<<<<<'M'  Divider Test FAILED>>>>>>>>>>>>>"
+9228        DISP "'M'  Divider Test FAILED!!"
+9229     END IF
+9230     BEEP 
+9231     ON KEY 5 LABEL "CarryOn" GOTO Done_1
+9232     ON KEY 7 LABEL "Repeat" GOTO M_divider
+9233    !
+9234     LOOP
+9235     END LOOP
+9236 Done_1:    !
+9237     OFF KEY 5
+9238     OFF KEY 7
+9239 M_done:     !
+9240    !
+9241     IF Hard THEN PRINT 
+9242    !
+9243 N_divider:     ! ___________________________________________
+9244    !
+9245    ! N Divider Tests
+9246    !
+9247     N_div=1
+9248     CALL Clr_scr
+9249     OUTPUT @Dut;"CW 2300 MZ  SHCF 200 MZ SHM1 CW"
+9250     PRINT "    *****************************************"
+9251     PRINT "    *      M/N LOOP 'N' Divider Tests       *"
+9252     PRINT "    *****************************************"
+9253     PRINT "               M/N OUTPUT    "&Model$&" RF     ERROR"
+9254     PRINT "  M    N       FREQ (MHz)   FREQ (MHz)     (Hz)"
+9255     PRINT " ---  ---      ----------   ----------    -----"
+9256     N=13
+9257     M=27
+9258     FOR F=2300 TO 6900 STEP 200
+9259        OUTPUT @Cntr;"H AU"
+9260        Mn_freq=200-10*(M/N)
+9261        Mn_freq=DROUND(Mn_freq,9)
+9262        TRIGGER @Cntr
+9263        ENTER @Cntr;Cntr_freq
+9264        Error=INT(ABS(F*1.E+6-Cntr_freq))
+9265        Cntr_freq=Cntr_freq/1.E+6
+9266        OUTPUT @Dut;"SHM1 OD"
+9267        ENTER @Dut;M,N,R,L
+9268        R=R/1.E+6
+9269        IF Error<10 THEN 
+9270           PRINT USING Mn_out;M,N,R,F,Error
+9271        ELSE
+9272           PRINT USING Mn_out_2;M,N,R,F,Error
+9273        END IF
+9274        IF ABS(R-Mn_freq)>1 THEN 
+9275           PRINT "      Calculated M/N output = ";Mn_freq
+9276           PRINT Model$&" programmed M/N output = ";R
+9277        END IF
+9278        N=N+1
+9279        IF F<6900 THEN OUTPUT @Dut;"UP"
+9280        IF Error>2 THEN N_div=0
+9281     NEXT F
+9282     IF N_div THEN 
+9283        PRINT "<<<<<<<<<<<<<'N'  Divider Test PASSED>>>>>>>>>>>>>"
+9284        WAIT 3
+9285        GOTO N_done
+9286     ELSE
+9287        PRINT "<<<<<<<<<<<<<'N'  Divider Test FAILED>>>>>>>>>>>>>"
+9288        DISP "'N'  Divider Test FAILED!!"
+9289     END IF
+9290     BEEP 
+9291     ON KEY 5 LABEL "CarryOn" GOTO Done_2
+9292     ON KEY 7 LABEL "Repeat" GOTO N_divider
+9293    !
+9294     LOOP
+9295     END LOOP
+9296 Done_2:    !
+9297     OFF KEY 5
+9298     OFF KEY 7
+9299 N_done:     !
+9300    !
+9301     IF (M_div=0) OR (N_div=0) THEN Mn_loop=0
+9302     IF Hard THEN 
+9303        Top_of_page
+9304     END IF
+9305    !
+9306     IF Test_all THEN GOTO Loop_20_30
+9307     GOTO Keys
+9308    !
+9309    ! End M/N tests
+9310    !
+9311    !
+9312 Loop_20_30:     ! ________________________________________
+9313    !
+9314     OFF KEY 
+9315     GOSUB Check_instr
+9316    !
+9317     ON KEY 9 LABEL "ABORT" GOTO Keys
+9318     CALL Clr_scr
+9319    !
+9320     DISP "INITIALIZING TEST EQUIPMENT"
+9321     OUTPUT @Dut;"IP PL0DB"
+9322     OUTPUT @Cntr;"R H AU SR3 T3"
+9323    !
+9324    ! N2 Divider Test
+9325    !
+9326 N2_1k:     ! __________________________________________
+9327    !
+9328     N2_loop=1
+9329     N2_1k=1
+9330     CALL Clr_scr
+9331     IF Hard=1 AND Test_all=0 THEN 
+9332        PRINTER IS Print
+9333        Top_of_page
+9334     END IF
+9335     OUTPUT @Dut;"CF 2.3105 GZ  DF 1 MZ SHCF 1 KZ S2 SHM1 CF"
+9336     PRINT "    *****************************************"
+9337     PRINT "    *   20/30 LOOP 'N2 1kHz' Divider Tests  *"
+9338     PRINT "    *****************************************"
+9339     PRINT " 20/30 OUTPUT      CENTER     "&Model$&" RF   ERROR"
+9340     PRINT "  FREQ (MHz)     FREQ (GHz)  FREQ (GHz)   (Hz)"
+9341     PRINT " ------------    ----------  ----------  -----"
+9342    !
+9343 N2_out:IMAGE 3X,2D.6D,5X,2D.6D,2X,3D.6D,5X,K
+9344 N2_out_2:IMAGE 3X,2D.6D,5X,2D.6D,2X,3D.6D,2X,K
+9345     FOR F=2.3105 TO 2.310511 STEP .000001
+9346        Fcntr=DROUND((F*1.E+3),5)
+9347        OUTPUT @Cntr;"H AU"
+9348        TRIGGER @Cntr
+9349        ENTER @Cntr;Cntr_freq
+9350        Error=INT(ABS((F-.0005)*10^9-Cntr_freq))
+9351        OUTPUT @Dut;"SHM1 OD"
+9352        ENTER @Dut;M,N,R,L
+9353        L=L/1.E+6
+9354        IF Error<10 THEN 
+9355           PRINT USING N2_out;L,F,F-.0005,Error
+9356        ELSE
+9357           PRINT USING N2_out_2;L,F,F-.0005,Error
+9358        END IF
+9359        IF F<2.310510 THEN 
+9360           OUTPUT @Dut;"UP"
+9361        END IF
+9362        IF Error>2 THEN 
+9363           N2_1k=0
+9364        END IF
+9365     NEXT F
+9366     PRINT 
+9367     IF N2_1k THEN 
+9368        PRINT "<<<<<<<<<<'N2 1kHz'  Divider Test PASSED>>>>>>>>>>"
+9369        WAIT 3
+9370        GOTO N2_1k_done
+9371     ELSE
+9372        PRINT "<<<<<<<<<<'N2 1kHz'  Divider Test FAILED>>>>>>>>>>"
+9373        DISP "'N2 1kHz'  Divider Test FAILED!!"
+9374        N2_loop=0
+9375     END IF
+9376     BEEP 
+9377     ON KEY 5 LABEL "CarryOn" GOTO Done_3
+9378     ON KEY 7 LABEL "Repeat" GOTO N2_1k
+9379    !
+9380     LOOP
+9381     END LOOP
+9382 Done_3:    !
+9383     OFF KEY 5
+9384     OFF KEY 7
+9385 N2_1k_done:     !
+9386    !
+9387     IF Hard THEN PRINT 
+9388    !
+9389 N2_10k:     ! _____________________________________________
+9390    !
+9391     N2_10k=1
+9392     CALL Clr_scr
+9393     OUTPUT @Dut;"CF 2.31051 GZ  DF 1 MZ SHCF 10 KZ S2 SHM1 CF"
+9394     PRINT "    *****************************************"
+9395     PRINT "    *  20/30 LOOP 'N2 10kHz' Divider Tests  *"
+9396     PRINT "    *****************************************"
+9397     PRINT " 20/30 OUTPUT      CENTER     "&Model$&" RF   ERROR"
+9398     PRINT "  FREQ (MHz)     FREQ (GHz)  FREQ (GHz)   (Hz)"
+9399     PRINT " ------------    ----------  ----------  -----"
+9400    !
+9401     FOR F=2.31051 TO 2.310610 STEP .00001
+9402        Fcntr=DROUND((F*1.E+3),5)
+9403        OUTPUT @Cntr;"H AU"
+9404        TRIGGER @Cntr
+9405        ENTER @Cntr;Cntr_freq
+9406        Error=INT(ABS((F-.0005)*10^9-Cntr_freq))
+9407        OUTPUT @Dut;"SHM1 OD"
+9408        ENTER @Dut;M,N,R,L
+9409        L=L/1.E+6
+9410        IF Error<10 THEN 
+9411           PRINT USING N2_out;L,F,F-.0005,Error
+9412        ELSE
+9413           PRINT USING N2_out_2;L,F,F-.0005,Error
+9414        END IF
+9415        IF F<2.310610 THEN 
+9416           OUTPUT @Dut;"UP"
+9417        END IF
+9418        IF Error>2 THEN 
+9419           N2_10k=0
+9420        END IF
+9421     NEXT F
+9422     PRINT 
+9423     IF N2_10k THEN 
+9424        PRINT "<<<<<<<<<'N2 10kHz'  Divider Test PASSED>>>>>>>>>"
+9425        WAIT 3
+9426        GOTO N2_10k_done
+9427     ELSE
+9428        PRINT "<<<<<<<<<'N2 10kHz'  Divider Test FAILED>>>>>>>>>"
+9429        DISP "'N2 10kHz'  Divider Test FAILED!!"
+9430        N2_loop=0
+9431     END IF
+9432     BEEP 
+9433     ON KEY 5 LABEL "CarryOn" GOTO Done_4
+9434     ON KEY 7 LABEL "Repeat" GOTO N2_10k
+9435    !
+9436     LOOP
+9437     END LOOP
+9438 Done_4:    !
+9439     OFF KEY 5
+9440     OFF KEY 7
+9441 N2_10k_done:     !
+9442    !
+9443     IF Hard THEN 
+9444        Top_of_page
+9445     END IF
+9446    !
+9447 N2_100k:  ! _______________________________________________
+9448    !
+9449     N2_100k=1
+9450     CALL Clr_scr
+9451     OUTPUT @Dut;"CF 2.31060 GZ  DF 1 MZ SHCF 100 KZ S2 SHM1 CF"
+9452     PRINT "    *****************************************"
+9453     PRINT "    *  20/30 LOOP 'N2 100kHz' Divider Tests *"
+9454     PRINT "    *****************************************"
+9455     PRINT " 20/30 OUTPUT      CENTER     "&Model$&" RF   ERROR"
+9456     PRINT "  FREQ (MHz)     FREQ (GHz)  FREQ (GHz)   (Hz)"
+9457     PRINT " ------------    ----------  ----------  -----"
+9458    !
+9459     FOR F=2.31060 TO 2.311510 STEP .0001
+9460        Fcntr=DROUND((F*1.E+3),5)
+9461        OUTPUT @Cntr;"AU"
+9462        TRIGGER @Cntr
+9463        ENTER @Cntr;Cntr_freq
+9464        Error=INT(ABS((F-.0005)*10^9-Cntr_freq))
+9465        OUTPUT @Dut;"SHM1 OD"
+9466        ENTER @Dut;M,N,R,L
+9467        L=L/1.E+6
+9468        IF Error<10 THEN 
+9469           PRINT USING N2_out;L,F,F-.0005,Error
+9470        ELSE
+9471           PRINT USING N2_out_2;L,F,F-.0005,Error
+9472        END IF
+9473        IF F<2.311500 THEN 
+9474           OUTPUT @Dut;"UP"
+9475        END IF
+9476        IF Error>2 THEN 
+9477           N2_100k=0
+9478        END IF
+9479     NEXT F
+9480     PRINT 
+9481     IF N2_100k THEN 
+9482        PRINT "<<<<<<<<<'N2 100kHz'  Divider Test PASSED>>>>>>>>>"
+9483        WAIT 3
+9484        GOTO N2_100k_done
+9485     ELSE
+9486        PRINT "<<<<<<<<<'N2 100kHz'  Divider Test FAILED>>>>>>>>>"
+9487        DISP "'N2 100kHz'  Divider Test FAILED!!"
+9488        N2_loop=0
+9489     END IF
+9490     BEEP 
+9491     ON KEY 5 LABEL "CarryOn" GOTO Done_5
+9492     ON KEY 7 LABEL "Repeat" GOTO N2_100k
+9493    !
+9494     LOOP
+9495     END LOOP
+9496 Done_5:    !
+9497     OFF KEY 5
+9498     OFF KEY 7
+9499 N2_100k_done:     !
+9500    !
+9501     IF Hard THEN PRINT 
+9502    !
+9503 N2_1m:  ! _________________________________________________
+9504    !
+9505     N2_1m=1
+9506     CALL Clr_scr
+9507     OUTPUT @Dut;"CF 2.31150 GZ  DF 1 MZ SHCF 1 MZ S2 SHM1 CF"
+9508     PRINT "    *****************************************"
+9509     PRINT "    *   20/30 LOOP 'N2 1MHz' Divider Tests  *"
+9510     PRINT "    *****************************************"
+9511     PRINT " 20/30 OUTPUT      CENTER     "&Model$&" RF   ERROR"
+9512     PRINT "  FREQ (MHz)     FREQ (GHz)  FREQ (GHz)   (Hz)"
+9513     PRINT " ------------    ----------  ----------  -----"
+9514    !
+9515     FOR F=2.31150 TO 2.3206 STEP .001
+9516        Fcntr=DROUND((F*1.E+3),5)
+9517        OUTPUT @Cntr;"AU"
+9518        TRIGGER @Cntr
+9519        ENTER @Cntr;Cntr_freq
+9520        Error=INT(ABS((F-.0005)*10^9-Cntr_freq))
+9521        OUTPUT @Dut;"SHM1 OD"
+9522        ENTER @Dut;M,N,R,L
+9523        L=L/1.E+6
+9524        IF Error<10 THEN 
+9525           PRINT USING N2_out;L,F,F-.0005,Error
+9526        ELSE
+9527           PRINT USING N2_out_2;L,F,F-.0005,Error
+9528        END IF
+9529        IF F<2.320000 THEN 
+9530           OUTPUT @Dut;"UP"
+9531        END IF
+9532        IF Error>2 THEN 
+9533           N2_1m=0
+9534        END IF
+9535     NEXT F
+9536     PRINT 
+9537     IF N2_1m THEN 
+9538        PRINT "<<<<<<<<<<'N2 1MHz'  Divider Test PASSED>>>>>>>>>>"
+9539        WAIT 3
+9540        GOTO N2_1m_done
+9541     ELSE
+9542        PRINT "<<<<<<<<<<'N2 1MHz'  Divider Test FAILED>>>>>>>>>>"
+9543        DISP "'N2 1MHz'  Divider Test FAILED!!"
+9544        N2_loop=0
+9545     END IF
+9546     BEEP 
+9547     ON KEY 5 LABEL "CarryOn" GOTO Done_6
+9548     ON KEY 7 LABEL "Repeat" GOTO N2_1m
+9549    !
+9550     LOOP
+9551     END LOOP
+9552 Done_6:    !
+9553     OFF KEY 5
+9554     OFF KEY 7
+9555 N2_1m_done:     !
+9556    !
+9557     IF Hard THEN 
+9558        Top_of_page
+9559     END IF
+9560    !
+9561    !  N2 LOOP DONE
+9562    !
+9563    ! ______________________________________________________
+9564    !
+9565    !   N1 LOOP
+9566    !
+9567 N1_loop:  !
+9568    !
+9569 N1_10k:  ! _________________________________________________
+9570    !
+9571     N1_10k=1
+9572     N1_loop=1
+9573     CALL Clr_scr
+9574     OUTPUT @Dut;"IP PL0DB CW 2319.97 MZ  SHCF 10 KZ SHM1 CW"
+9575     PRINT "    *****************************************"
+9576     PRINT "    *  20/30 LOOP 'N1 10kHz' Divider Tests  *"
+9577     PRINT "    *****************************************"
+9578     PRINT "      20/30 OUTPUT     "&Model$&" CW     ERROR"
+9579     PRINT "       FREQ (MHz)     FREQ (MHz)     (Hz)"
+9580     PRINT "      ------------    ----------    -----"
+9581    !
+9582 N1_out:IMAGE 7X,2D.6D,5X,4D.6D,6X,K
+9583 N1_out_2:IMAGE 7X,2D.6D,5X,4D.6D,2X,K
+9584     FOR F=2319.97 TO 2319.86 STEP -.01
+9585        OUTPUT @Cntr;"AU"
+9586        TRIGGER @Cntr
+9587        ENTER @Cntr;Cntr_freq
+9588        Error=INT(ABS(F*10^6-Cntr_freq))
+9589        OUTPUT @Dut;"SHM1 OD"
+9590        ENTER @Dut;M,N,R,L
+9591        L=L/1.E+6
+9592        IF Error<10 THEN 
+9593           PRINT USING N1_out;L,F,Error
+9594        ELSE
+9595           PRINT USING N1_out_2;L,F,Error
+9596        END IF
+9597        IF F>2319.87 THEN 
+9598           OUTPUT @Dut;"DN"
+9599        END IF
+9600        IF Error>2 THEN 
+9601           N1_10k=0
+9602        END IF
+9603     NEXT F
+9604     PRINT 
+9605     IF N1_10k THEN 
+9606        PRINT "<<<<<<<<<<'N1 10kHz'  Divider Test PASSED>>>>>>>>>>"
+9607        WAIT 3
+9608        GOTO N1_10k_done
+9609     ELSE
+9610        PRINT "<<<<<<<<<<'N1 10kHz'  Divider Test FAILED>>>>>>>>>>"
+9611        DISP "'N1 10kHz'  Divider Test FAILED!!"
+9612        N1_loop=0
+9613     END IF
+9614     BEEP 
+9615     ON KEY 5 LABEL "CarryOn" GOTO Done_7
+9616     ON KEY 7 LABEL "Repeat" GOTO N1_10k
+9617    !
+9618     LOOP
+9619     END LOOP
+9620 Done_7:    !
+9621     OFF KEY 5
+9622     OFF KEY 7
+9623 N1_10k_done:     !
+9624    !
+9625     IF Hard THEN PRINT 
+9626    !
+9627    ! End N1_10k Tests
+9628    !
+9629 N1_100k:  ! ____________________________________________
+9630    !
+9631     N1_100k=1
+9632     CALL Clr_scr
+9633     OUTPUT @Dut;"IP PL0DB CW 2319.87 MZ  SHCF 100 KZ SHM1 CW"
+9634     PRINT "    *****************************************"
+9635     PRINT "    *  20/30 LOOP 'N1 100kHz' Divider Tests *"
+9636     PRINT "    *****************************************"
+9637     PRINT "      20/30 OUTPUT     "&Model$&" CW     ERROR"
+9638     PRINT "         FREQ         FREQ (MHz)     (Hz)"
+9639     PRINT "      ------------    ----------    -----"
+9640    !
+9641     FOR F=2319.87 TO 2318.96 STEP -.1
+9642        OUTPUT @Cntr;"AU"
+9643        TRIGGER @Cntr
+9644        ENTER @Cntr;Cntr_freq
+9645        Error=INT(ABS(F*10^6-Cntr_freq))
+9646        OUTPUT @Dut;"SHM1 OD"
+9647        ENTER @Dut;M,N,R,L
+9648        L=L/1.E+6
+9649        IF Error<10 THEN 
+9650           PRINT USING N1_out;L,F,Error
+9651        ELSE
+9652           PRINT USING N1_out_2;L,F,Error
+9653        END IF
+9654        IF F>2318.98 THEN 
+9655           OUTPUT @Dut;"DN"
+9656        END IF
+9657        IF Error>2 THEN 
+9658           N1_100k=0
+9659        END IF
+9660     NEXT F
+9661     PRINT 
+9662     IF N1_100k THEN 
+9663        PRINT "<<<<<<<<<'N1 100kHz'  Divider Test PASSED>>>>>>>>>"
+9664        WAIT 3
+9665        GOTO N1_100k_done
+9666     ELSE
+9667        PRINT "<<<<<<<<<'N1 100kHz'  Divider Test FAILED>>>>>>>>>"
+9668        DISP "'N1 100kHz'  Divider Test FAILED!!"
+9669        N1_loop=0
+9670     END IF
+9671     BEEP 
+9672     ON KEY 5 LABEL "CarryOn" GOTO Done_8
+9673     ON KEY 7 LABEL "Repeat" GOTO N1_100k
+9674    !
+9675     LOOP
+9676     END LOOP
+9677 Done_8:    !
+9678     OFF KEY 5
+9679     OFF KEY 7
+9680 N1_100k_done:     !
+9681    !
+9682     IF Hard THEN PRINT 
+9683    !
+9684    ! End N1_100k Tests
+9685    !
+9686 N1_1m:  ! ________________________________________________
+9687    !
+9688     N1_1m=1
+9689     CALL Clr_scr
+9690     OUTPUT @Dut;"IP PL0DB CW 2318.97 MZ  SHCF 1 MZ SHM1 CW"
+9691     PRINT "    *****************************************"
+9692     PRINT "    *   20/30 LOOP 'N1 1MHz' Divider Tests  *"
+9693     PRINT "    *****************************************"
+9694     PRINT "      20/30 OUTPUT     "&Model$&" CW     ERROR"
+9695     PRINT "         FREQ         FREQ (MHz)     (Hz)"
+9696     PRINT "      ------------    ----------    -----"
+9697    !
+9698     FOR F=2318.97 TO 2310.96 STEP -1
+9699        OUTPUT @Cntr;"AU"
+9700        TRIGGER @Cntr
+9701        ENTER @Cntr;Cntr_freq
+9702        Error=INT(ABS(F*10^6-Cntr_freq))
+9703        OUTPUT @Dut;"SHM1 OD"
+9704        ENTER @Dut;M,N,R,L
+9705        L=L/1.E+6
+9706        IF Error<10 THEN 
+9707           PRINT USING N1_out;L,F,Error
+9708        ELSE
+9709           PRINT USING N1_out_2;L,F,Error
+9710        END IF
+9711        IF F>2310.98 THEN 
+9712           OUTPUT @Dut;"DN"
+9713        END IF
+9714        IF Error>2 THEN 
+9715           N1_1m=0
+9716        END IF
+9717     NEXT F
+9718     PRINT 
+9719     IF N1_1m THEN 
+9720        PRINT "<<<<<<<<<<'N1 1MHz'  Divider Test PASSED>>>>>>>>>>"
+9721        WAIT 3
+9722        GOTO N1_1m_done
+9723     ELSE
+9724        PRINT "<<<<<<<<<<'N1 1MHz'  Divider Test FAILED>>>>>>>>>>"
+9725        DISP "'N1 1MHz'  Divider Test FAILED!!"
+9726        N1_loop=0
+9727     END IF
+9728     BEEP 
+9729     ON KEY 5 LABEL "CarryOn" GOTO Done_9
+9730     ON KEY 7 LABEL "Repeat" GOTO N1_1m
+9731    !
+9732     LOOP
+9733     END LOOP
+9734 Done_9:    !
+9735     OFF KEY 5
+9736     OFF KEY 7
+9737 N1_1m_done:     !
+9738    !
+9739     IF Hard THEN 
+9740        Top_of_page
+9741     END IF
+9742    !
+9743    ! End N1_1m Tests
+9744    !
+9745 Endpoint_accy:    !
+9746    !
+9747     OFF KEY 
+9748     GOSUB Check_instr
+9749    !
+9750     ON KEY 9 LABEL "ABORT" GOTO Keys
+9751     CALL Clr_scr
+9752    !
+9753     DISP "INITIALIZING TEST EQUIPMENT"
+9754     OUTPUT @Dut;"IP PL0DB"
+9755     OUTPUT @Cntr;"R H AU SR3 T3"
+9756    !
+9757     End_acc=1
+9758     IF Hard=1 AND Test_all=0 THEN 
+9759        PRINTER IS Print
+9760        Top_of_page
+9761     END IF
+9762    !
+9763     PRINT 
+9764     PRINT "       *****************************************"
+9765     PRINT "       *        Endpoint Accuracy Test         *"
+9766     PRINT "       *****************************************"
+9767     PRINT 
+9768    !
+9769 Get_the_data:    !
+9770    !
+9771     IF FNDut_has("BAND 4") THEN 
+9772        RESTORE Band_4_data
+9773     ELSE
+9774        IF FNDut_has("H19") THEN 
+9775           RESTORE H19_data
+9776        ELSE
+9777           RESTORE No_band_4_data
+9778        END IF
+9779     END IF
+9780     !
+9781     READ End_points(*)
+9782     READ End_specs(*)
+9783     !
+9784 Band_4_data:     !
+9785     DATA 26500,6999.999999,2300,10  ! Endpoint data in MHz
+9786     DATA 5,2,2,2  !  Test limit data in Hz
+9787     !
+9788 No_band_4_data:     !
+9789     DATA 20000,6999.999999,2300,10  ! Endpoint data in MHz
+9790     DATA 4,2,2,2  !  Test limit data in Hz
+9791     !
+9792 H19_data:    !
+9793     DATA 19000,6999.999999,2300,10  ! Endpoint data in MHz
+9794     DATA 4,2,2,2  !  Test limit data in Hz
+9795     !
+9796     DISP 
+9797     FOR I=1 TO 4
+9798        OUTPUT @Dut;"CW";End_points(I);"MZ"
+9799        OUTPUT @Cntr;"AU"
+9800        TRIGGER @Cntr
+9801        ENTER @Cntr;Cntr_freq
+9802        Error=INT(ABS(End_points(I)*1.E+6-Cntr_freq))
+9803        PRINT "        PROGRAMMED FREQUENCY:  ";End_points(I);"MHz"
+9804        PRINT "        MEASURED FREQUENCY:    ";Cntr_freq/1.E+6;"MHz"
+9805        PRINT "        ERROR:                 ";Error;"Hz"
+9806        PRINT 
+9807        IF Error>End_specs(I) THEN End_acc=0
+9808      !
+9809        IF I=3 THEN 
+9810      !
+9811           PRINTER IS Crt
+9812           PRINT ""
+9813           PRINT "   CONNECT THE DUT'S RF OUTPUT TO THE FREQUENCY"
+9814           PRINT "   COUNTERS 10 Hz - 500 MHz INPUT.  Switch the "
+9815           PRINT "   front panel frequency switch to the 10 MHz -"
+9816           PRINT "   500 MHz position and set the input to 50 Ohms!"
+9817           PRINT ""
+9818           IF Hard=1 THEN PRINTER IS Print
+9819      !
+9820           OUTPUT @Dut;"CW 10 MZ PL 10 DB"
+9821           OUTPUT @Cntr;"L AU"
+9822           Wait_for_cont
+9823        END IF
+9824     NEXT I
+9825     PRINT 
+9826     IF End_acc THEN 
+9827        PRINT "<<<<<<<<<<Endpoint Accuracy Test PASSED>>>>>>>>>>"
+9828        WAIT 3
+9829        GOTO Endpoint_done
+9830     ELSE
+9831        PRINT "<<<<<<<<<<Endpoint Accuracy Test FAILED>>>>>>>>>>"
+9832        DISP "Endpoint Accuracy Test FAILED!!"
+9833        PRINTER IS Crt
+9834        PRINT ""
+9835        PRINT "  IF YOU ARE GOING TO REPEAT THIS TEST, RECONNECT"
+9836        PRINT "  THE DUT'S RF OUTPUT TO THE FREQUENCY COUNTER'S"
+9837        PRINT "  500 MHz - 26.5 GHz INPUT AND RETURN THE FREQUENCY"
+9838        PRINT "  SWITCH TO THE 500 MHz - 26.5 GHz POSITION!!"
+9839        PRINT ""
+9840        IF Hard=1 THEN PRINTER IS Print
+9841     END IF
+9842     BEEP 
+9843     ON KEY 5 LABEL "CarryOn" GOTO Endpoint_done
+9844     ON KEY 7 LABEL "Repeat" GOTO Endpoint_accy
+9845     !
+9846     LOOP
+9847     END LOOP
+9848     !
+9849 Endpoint_done:  !
+9850     IF Hard THEN CALL Top_of_page
+9851     PRINTER IS Crt
+9852     OFF KEY 5
+9853     OFF KEY 7
+9854     GOTO Keys
+9855     !
+9856     !  Endpoint Accuracy Test Done
+9857     !
+9858 Done: !_______________________________________
+9859  !
+9860     PRINTER IS Crt
+9861     IF Abort=0 THEN 
+9862        Low_freq_loop=1
+9863        IF (N2_loop=0) OR (N1_loop=0) THEN Low_freq_loop=0
+9864        IF (Low_freq_loop=1) AND (Mn_loop=1) AND (End_acc=1) THEN CALL Pass_count(Status_flag)
+9865        IF (Low_freq_loop=0) OR (Mn_loop=0) OR (End_acc=0) THEN CALL Fail_count(Status_flag)
+9866    !
+9867     END IF
+9868  SUBEND
+9869  !
+9870  ! __________________________________________________
+9871  !
+9872 Cw_acc_setup:SUB Cw_acc_setup
+9873     GINIT
+9874     GRAPHICS ON
+9875     VIEWPORT 0,120,0,95
+9876     WINDOW 0,135,0,100
+9877     Box(114,68,23,13)
+9878     Label("CW FREQUENCY ACCURACY TEST SETUP",64,95.25,5,.6,0)
+9879     Label("DUT",24,85.5,5,.6,0)
+9880     Label("HP 5343A",114,70,3.6,.6,0)
+9881     Label("FrequencyCounter",114,82,4.5,.6,0)
+9882     Label("FREQ STDOUT",92,72,3.5,.6,0)
+9883     Label("EXT FREQUENCYSTANDARD",61,72,3.5,.6,0)
+9884     Label("RF OUTPUT",30,58.5,3.5,.6,0)
+9885     Label("500 MHz-26.5 GHz",112,58,3.4,.6,0)
+9886     Label("Set the HP 5343A's front panel frequencyswitch to the 500 MHz-26.5 GHz position.",65,30,4.5,.6,0)
+9887     Connect(41,62.75,111.25,38,0)
+9888     Connect(122,63.5,109.5,38,0)
+9889     Connect(45,65.75,102,65.5,0)
+9890     Circle(122,64.75,.75,0,360)
+9891     Circle(118,64.75,.75,0,360)
+9892     Amp(47.3333333333,66.6666666667,-1)
+9893     Dut(-91,29,-77,-37)
+9894  SUBEND
+9895!*********************************************
+9896!*********************************************
+9897 Dut:SUB Dut(Xpos,Ypos,Sizex,Sizey)
+9898     GRAPHICS ON
+9899     WINDOW -Xpos+Sizex,135-Xpos-Sizex,-Ypos+Sizey,100-Ypos-Sizey
+9900     Box(67,59,87,36)
+9901     Box(67,71,80,8)
+9902     Circle(37,46,2.25,0,360)
+9903     Circle(52.75,46,2.25,0,360)
+9904     Circle(60.25,46,2.25,0,360)
+9905     Circle(66.5,46,2.25,0,360)
+9906     Circle(102.5,46,3,0,360)
+9907     Circle(72,57.25,4.5,0,360)
+9908     WINDOW 0,135,0,100
+9909  SUBEND
+9910 Memend:!

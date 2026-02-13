@@ -15,10 +15,13 @@ The HP 8340A and 8340B are synthesized signal generators manufactured by Hewlett
 
 ## Prerequisites
 
-- .NET 8.0 SDK or later
-- NI-VISA Runtime (download from [National Instruments](https://www.ni.com/en-us/support/downloads/drivers/download.ni-visa.html))
-- GPIB interface hardware (National Instruments GPIB-USB-HS, etc.)
-- HP 8340A or HP 8340B Signal Generator
+- **.NET Framework 4.7.2** or later (for Windows)
+- **Visual Studio 2017** or later (recommended for building)
+- **NI-VISA Runtime** (download from [National Instruments](https://www.ni.com/en-us/support/downloads/drivers/download.ni-visa.html))
+- **GPIB interface hardware** (National Instruments GPIB-USB-HS, etc.)
+- **HP 8340A or HP 8340B Signal Generator**
+
+> **Note**: This is a .NET Framework 4.7.2 Windows application. It requires Visual Studio or MSBuild on Windows to build. The project uses packages.config for NuGet package management, following the traditional .NET Framework project structure.
 
 ## Installation
 
@@ -28,15 +31,23 @@ The HP 8340A and 8340B are synthesized signal generators manufactured by Hewlett
    cd HP8340ACalVerification
    ```
 
-2. Build the project:
-   ```bash
-   dotnet build
-   ```
+2. Open the solution in Visual Studio:
+   - Open `HP8340ACalVerification.sln` in Visual Studio 2017 or later
+   - Visual Studio will automatically restore NuGet packages
 
-3. Run the application:
-   ```bash
-   dotnet run --project HP8340ACalVerification/HP8340ACalVerification.csproj
-   ```
+3. Build the project:
+   - In Visual Studio: Build → Build Solution (or press Ctrl+Shift+B)
+   - Or using MSBuild from command line:
+     ```bash
+     msbuild HP8340ACalVerification.sln /t:Build /p:Configuration=Release
+     ```
+
+4. Run the application:
+   - In Visual Studio: Debug → Start Without Debugging (or press Ctrl+F5)
+   - Or run the executable directly:
+     ```bash
+     HP8340ACalVerification\bin\Release\HP8340ACalVerification.exe
+     ```
 
 ## Usage
 
@@ -50,12 +61,33 @@ The HP 8340A and 8340B are synthesized signal generators manufactured by Hewlett
 
 This project is under active development. Current status:
 
-- [x] Basic application structure
+- [x] Basic application structure (.NET Framework 4.7.2)
 - [x] GPIB connection functionality
 - [x] Spectre.Console UI
-- [ ] Attenuator calibration procedures (pending HP-BASIC reference files)
-- [ ] Operation verification tests (pending HP-BASIC reference files)
-- [ ] Detailed documentation from service manual
+- [x] Code review feedback addressed
+- [x] Service manual received (9018-05913.pdf)
+- [x] HP-BASIC reference files received
+- [ ] Attenuator calibration procedures (implementation in progress)
+- [ ] Operation verification tests (implementation in progress)
+- [ ] Integration of HP-BASIC program logic into C#
+
+## HP-BASIC Reference Files Received
+
+The following HP-BASIC program files have been provided for reference:
+
+- **Alc_ad.txt** - ALC (Automatic Level Control) Adjust and Verify
+- **At_cal.txt** - Attenuator Calibration and Verification
+- **Cal_co.txt** - Calibration Constants Utilities
+- **Copy.txt** - Software copy program
+- **Cw_acc.txt** - CW Frequency Accuracy Test
+- **Fre_sw.txt** - Frequency Switching Time Test
+- **FS_MANAGER.txt** - File System Manager
+- **JANITOR.txt** - Cleanup and initialization routines
+- **Max_le.txt** - Maximum Level Test
+- **Pwracc.txt** - Power Accuracy Test
+- **Thrash.txt** - System test utilities
+
+These files are being analyzed to recreate the functionality in C# using modern .NET and NI-VISA libraries.
 
 ## Service Manual and HP-BASIC Files
 
