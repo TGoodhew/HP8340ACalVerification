@@ -13,7 +13,6 @@ namespace HP8340ACalVerification
         private static readonly string[] MenuChoices = new[] { 
             "Set GPIB Address", 
             "Connect to HP 8340A/B", 
-            "Query Instrument ID",
             "Run Attenuator Calibration",
             "Run Operation Verification",
             "Exit" 
@@ -21,7 +20,7 @@ namespace HP8340ACalVerification
 
         static void Main(string[] args)
         {
-            int gpibAddress = 19; // Default GPIB address for HP 8340A/B
+            int gpibAddress = 20; // Default GPIB address for HP 8340A/B
             NationalInstruments.Visa.ResourceManager resManager = null;
             GpibSession gpibSession = null;
 
@@ -46,18 +45,6 @@ namespace HP8340ACalVerification
 
                     case "Connect to HP 8340A/B":
                         ConnectToDevice(gpibAddress, ref resManager, ref gpibSession);
-                        break;
-
-                    case "Query Instrument ID":
-                        if (gpibSession == null)
-                        {
-                            AnsiConsole.MarkupLine("[red]Error: Instrument must be connected first.[/]");
-                            Thread.Sleep(1500);
-                        }
-                        else
-                        {
-                            QueryInstrumentID(gpibSession);
-                        }
                         break;
 
                     case "Run Attenuator Calibration":
@@ -232,39 +219,6 @@ namespace HP8340ACalVerification
                 AnsiConsole.MarkupLine($"[red]Error connecting to instrument: {ex.Message}[/]");
                 Thread.Sleep(2000);
                 return false;
-            }
-        }
-
-        static void QueryInstrumentID(GpibSession gpibSession)
-        {
-            try
-            {
-                AnsiConsole.Status()
-                    .Start("Querying instrument ID...", ctx =>
-                    {
-                        ctx.Spinner(Spinner.Known.Dots);
-                        ctx.SpinnerStyle(Style.Parse("green"));
-
-                        // Send identification query
-                        gpibSession.FormattedIO.WriteLine("*IDN?");
-                        string response = gpibSession.FormattedIO.ReadLine();
-
-                        AnsiConsole.WriteLine();
-                        AnsiConsole.Write(
-                            new Panel($"[green]{response}[/]")
-                                .Header("[yellow]Instrument Identification[/]")
-                                .BorderColor(Color.Blue)
-                                .RoundedBorder());
-                    });
-
-                Thread.Sleep(2000);
-            }
-            catch (Exception ex)
-            {
-                AnsiConsole.MarkupLine($"[red]Error querying instrument: {ex.Message}[/]");
-                AnsiConsole.MarkupLine("[yellow]Note: The HP 8340A/B may not support the *IDN? command.[/]");
-                AnsiConsole.MarkupLine("[yellow]Older instruments may require different identification commands.[/]");
-                Thread.Sleep(3000);
             }
         }
     }
