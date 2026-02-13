@@ -52,7 +52,15 @@ namespace HP8340ACalVerification
             string formatString = $"{{0:F{decimalPlaces}}}";
             string valueStr = string.Format(formatString, absValue);
             
-            return $"{sign}{valueStr} {prefixes[index]}{unit}";
+            // Only add space before unit if unit is not empty
+            if (string.IsNullOrEmpty(unit))
+            {
+                return $"{sign}{valueStr}{prefixes[index]}";
+            }
+            else
+            {
+                return $"{sign}{valueStr} {prefixes[index]}{unit}";
+            }
         }
 
         /// <summary>

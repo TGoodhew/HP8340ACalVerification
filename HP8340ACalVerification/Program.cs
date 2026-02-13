@@ -9,10 +9,19 @@ namespace HP8340ACalVerification
 {
     internal class Program
     {
+        // Menu choices for consistency
+        private static readonly string[] MenuChoices = new[] { 
+            "Set GPIB Address", 
+            "Connect to HP 8340A/B", 
+            "Query Instrument ID",
+            "Run Attenuator Calibration",
+            "Run Operation Verification",
+            "Exit" 
+        };
+
         static void Main(string[] args)
         {
             int gpibAddress = 19; // Default GPIB address for HP 8340A/B
-            SemaphoreSlim srqWait = new SemaphoreSlim(0, 1);
             NationalInstruments.Visa.ResourceManager? resManager = null;
             GpibSession? gpibSession = null;
 
@@ -23,14 +32,7 @@ namespace HP8340ACalVerification
                 new SelectionPrompt<string>()
                     .Title("Select an option:")
                     .PageSize(10)
-                    .AddChoices(new[] { 
-                        "Set GPIB Address", 
-                        "Connect to HP 8340A/B", 
-                        "Query Instrument ID",
-                        "Run Attenuator Calibration",
-                        "Run Operation Verification",
-                        "Exit" 
-                    })
+                    .AddChoices(MenuChoices)
             );
 
             while (choice != "Exit")
@@ -42,7 +44,7 @@ namespace HP8340ACalVerification
                         break;
 
                     case "Connect to HP 8340A/B":
-                        ConnectToDevice(gpibAddress, ref srqWait, ref resManager, ref gpibSession);
+                        ConnectToDevice(gpibAddress, ref resManager, ref gpibSession);
                         break;
 
                     case "Query Instrument ID":
@@ -90,14 +92,7 @@ namespace HP8340ACalVerification
                     new SelectionPrompt<string>()
                         .Title("Select an option:")
                         .PageSize(10)
-                        .AddChoices(new[] { 
-                            "Set GPIB Address", 
-                            "Connect to HP 8340A/B", 
-                            "Query Instrument ID",
-                            "Run Attenuator Calibration",
-                            "Run Operation Verification",
-                            "Exit" 
-                        })
+                        .AddChoices(MenuChoices)
                 );
             }
 
@@ -153,7 +148,7 @@ namespace HP8340ACalVerification
             Thread.Sleep(1000);
         }
 
-        static bool ConnectToDevice(int gpibAddress, ref SemaphoreSlim srqWait, ref NationalInstruments.Visa.ResourceManager? resManager, ref GpibSession? gpibSession)
+        static bool ConnectToDevice(int gpibAddress, ref NationalInstruments.Visa.ResourceManager? resManager, ref GpibSession? gpibSession)
         {
             // Create local variables for use in lambda
             NationalInstruments.Visa.ResourceManager? localResManager = resManager;
